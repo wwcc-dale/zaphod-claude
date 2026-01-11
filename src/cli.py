@@ -3,15 +3,14 @@
 Zaphod CLI - Unified interface for course management
 
 Usage:
-    python cli.py sync [--watch] [--course-id ID]
-    python cli.py validate [--fix]
-    python cli.py prune [--dry-run] [--assignments]
-    python cli.py list [--type TYPE]
-    python cli.py new --type TYPE --name NAME
-    python cli.py init --course-id ID [--with-yaml]
-    python cli.py config [--show-secrets]
-    python cli.py info
-    python cli.py ui [--port PORT]
+    zaphod sync [--watch] [--dry-run] [--course-id ID]
+    zaphod validate [--fix]
+    zaphod prune [--dry-run] [--assignments]
+    zaphod list [--type TYPE]
+    zaphod new --type TYPE --name NAME
+    zaphod info
+    zaphod config [--show-sources]
+    zaphod init --course-id ID [--with-yaml]
 
 This CLI wraps existing Zaphod scripts without modifying them.
 """
@@ -21,7 +20,6 @@ import subprocess
 import sys
 import os
 import json
-import webbrowser
 from pathlib import Path
 from typing import Optional, List
 from datetime import datetime
@@ -64,15 +62,8 @@ class ZaphodContext:
         return sys.executable
     
     def get_course_id(self) -> Optional[str]:
-        """Get course ID from config system"""
-        # Try the new config system first
-        try:
-            from config_utils import get_course_id as _get_course_id
-            return _get_course_id(self.course_root)
-        except Exception:
-            pass
-        
-        # Fall back to legacy behavior
+        """Get course ID from env, zaphod.yaml, or defaults.json"""
+        # Check environment first
         course_id = os.environ.get("COURSE_ID")
         if course_id:
             return course_id
@@ -88,7 +79,7 @@ class ZaphodContext:
             except Exception:
                 pass
         
-        # Check defaults.json
+        # Fall back to defaults.json
         defaults_path = self.metadata_dir / "defaults.json"
         if defaults_path.exists():
             try:
@@ -96,7 +87,6 @@ class ZaphodContext:
                 return str(data.get("course_id")) if data.get("course_id") else None
             except Exception:
                 pass
-        
         return None
     
     def run_script(self, script_name: str, env: Optional[dict] = None) -> subprocess.CompletedProcess:
@@ -142,309 +132,36 @@ def cli(ctx):
 
 
 # ============================================================================
-# Init Command (NEW)
-# ============================================================================
-
-@cli.command()
-@click.option('--course-id', required=True, type=int, help='Canvas course ID')
-@click.option('--with-yaml', is_flag=True, help='Create zaphod.yaml config file')
-@click.option('--force', is_flag=True, help='Overwrite existing files')
-@click.pass_obj
-def init(ctx: ZaphodContext, course_id: int, with_yaml: bool, force: bool):
-    """
-    Initialize a new Zaphod course
-    
-    Creates the directory structure and configuration files
-    for a new Zaphod-managed course.
-    
-    Examples:
-        zaphod init --course-id 12345
-        zaphod init --course-id 12345 --with-yaml
-    """
-    course_root = ctx.course_root
-    
-    click.echo(f"🚀 Initializing Zaphod course in {course_root}")
-    click.echo(f"   Course ID: {course_id}")
-    click.echo()
-    
-    # Create directory structure
-    directories = [
-        "pages",
-        "assets", 
-        "quiz-banks",
-        "outcomes",
-        "modules",
-        "rubrics",
-        "rubrics/rows",
-        "_course_metadata",
-    ]
-    
-    for dir_name in directories:
-        dir_path = course_root / dir_name
-        if not dir_path.exists():
-            dir_path.mkdir(parents=True)
-            click.echo(f"  📁 Created {dir_name}/")
-        else:
-            click.echo(f"  ✓ {dir_name}/ exists")
-    
-    # Create legacy defaults.json (for backward compatibility)
-    defaults_path = course_root / "_course_metadata" / "defaults.json"
-    if not defaults_path.exists() or force:
-        defaults = {"course_id": course_id}
-        defaults_path.write_text(json.dumps(defaults, indent=2))
-        click.echo(f"  📄 Created _course_metadata/defaults.json")
-    else:
-        click.echo(f"  ✓ _course_metadata/defaults.json exists")
-    
-    # Create zaphod.yaml if requested
-    if with_yaml:
-        yaml_path = course_root / "zaphod.yaml"
-        if not yaml_path.exists() or force:
-            yaml_content = f"""\
-# Zaphod Configuration
-# ====================
-# This file configures Zaphod for this course.
-# Values here override defaults but are overridden by environment variables.
-
-# Canvas Course ID (required)
-course_id: {course_id}
-
-# Canvas API settings
-# -------------------
-# Option 1: Reference a credentials file (recommended)
-credential_file: ~/.canvas/credentials.txt
-
-# Option 2: Inline credentials (less secure)
-# api_url: https://canvas.institution.edu
-# api_key: your_api_token_here
-
-# Prune Settings
-# --------------
-prune:
-  # Actually delete content (false = dry run)
-  apply: true
-  # Include assignments in pruning
-  assignments: true
-
-# Watch Mode Settings
-# -------------------
-watch:
-  # Seconds to wait after change before running pipeline
-  debounce: 2.0
-
-# Custom Variables
-# ----------------
-# Add any custom variables here
-# instructor_name: "Your Name"
-# semester: "Spring 2026"
-"""
-            yaml_path.write_text(yaml_content)
-            click.echo(f"  📄 Created zaphod.yaml")
-        else:
-            click.echo(f"  ✓ zaphod.yaml exists (use --force to overwrite)")
-    
-    # Create .gitignore if not exists
-    gitignore_path = course_root / ".gitignore"
-    if not gitignore_path.exists():
-        gitignore_content = """\
-# Zaphod generated files
-_course_metadata/upload_cache.json
-_course_metadata/watch_state.json
-
-# Work files (regenerated from index.md)
-pages/**/meta.json
-pages/**/source.md
-pages/**/styled_source.md
-pages/**/result.html
-
-# Python
-__pycache__/
-*.py[cod]
-.venv/
-
-# OS files
-.DS_Store
-Thumbs.db
-"""
-        gitignore_path.write_text(gitignore_content)
-        click.echo(f"  📄 Created .gitignore")
-    
-    # Create sample module_order.yaml
-    module_order_path = course_root / "modules" / "module_order.yaml"
-    if not module_order_path.exists():
-        module_order_content = """\
-# Module ordering
-# ---------------
-# List modules in desired order. These will be created if they don't exist.
-# Modules listed here are protected from empty-module pruning.
-
-- "Start Here"
-- "Module 1"
-- "Module 2"
-"""
-        module_order_path.write_text(module_order_content)
-        click.echo(f"  📄 Created modules/module_order.yaml")
-    
-    # Create sample outcomes.yaml
-    outcomes_path = course_root / "outcomes" / "outcomes.yaml"
-    if not outcomes_path.exists():
-        outcomes_content = """\
-# Course Learning Outcomes
-# ------------------------
-# Define your course learning outcomes here.
-# See sync_clo_via_csv.py for how these are imported into Canvas.
-
-course_outcomes: []
-  # - code: CLO1
-  #   title: Example Outcome
-  #   description: Students will demonstrate understanding of...
-  #   vendor_guid: CLO1
-  #   mastery_points: 3
-  #   ratings:
-  #     - points: 3
-  #       description: Exceeds expectations
-  #     - points: 2
-  #       description: Meets expectations
-  #     - points: 1
-  #       description: Below expectations
-"""
-        outcomes_path.write_text(outcomes_content)
-        click.echo(f"  📄 Created outcomes/outcomes.yaml")
-    
-    click.echo()
-    click.echo("✅ Course initialized!")
-    click.echo()
-    click.echo("Next steps:")
-    click.echo("  1. Create pages in pages/*.page/index.md")
-    click.echo("  2. Run: zaphod sync --watch")
-    click.echo()
-    click.echo("For help: zaphod --help")
-
-
-# ============================================================================
-# Config Command (NEW)
-# ============================================================================
-
-@cli.command()
-@click.option('--show-secrets', is_flag=True, help='Show API keys (careful!)')
-@click.pass_obj
-def config(ctx: ZaphodContext, show_secrets: bool):
-    """
-    Show current configuration
-    
-    Displays configuration sources and resolved values.
-    Useful for debugging configuration issues.
-    
-    Examples:
-        zaphod config                 # Show config (keys masked)
-        zaphod config --show-secrets  # Show full API keys
-    """
-    click.echo("📋 Zaphod Configuration\n")
-    click.echo("=" * 60)
-    
-    course_root = ctx.course_root
-    
-    # Show what config files exist
-    click.echo("\nConfiguration sources (in priority order):")
-    
-    sources = [
-        ("Environment: COURSE_ID", "COURSE_ID" in os.environ),
-        ("Environment: CANVAS_API_KEY", "CANVAS_API_KEY" in os.environ),
-        ("Environment: CANVAS_API_URL", "CANVAS_API_URL" in os.environ),
-        ("zaphod.yaml", (course_root / "zaphod.yaml").exists()),
-        ("zaphod.yml", (course_root / "zaphod.yml").exists()),
-        ("_course_metadata/defaults.json", (course_root / "_course_metadata" / "defaults.json").exists()),
-        ("~/.zaphod/config.yaml", (Path.home() / ".zaphod" / "config.yaml").exists()),
-        ("~/.canvas/credentials.txt", (Path.home() / ".canvas" / "credentials.txt").exists()),
-    ]
-    
-    for name, exists in sources:
-        status = "✓" if exists else "✗"
-        click.echo(f"  {status} {name}")
-    
-    click.echo("\nResolved configuration:")
-    click.echo("-" * 60)
-    
-    # Try to use the new config system
-    try:
-        from config_utils import get_config
-        config_obj = get_config(course_root, reload=True)
-        
-        click.echo(f"  course_id: {config_obj.course_id or '(not set)'}")
-        click.echo(f"  api_url: {config_obj.api_url or '(not set)'}")
-        
-        if show_secrets:
-            click.echo(f"  api_key: {config_obj.api_key or '(not set)'}")
-        else:
-            if config_obj.api_key:
-                masked = config_obj.api_key[:4] + "..." + config_obj.api_key[-4:] if len(config_obj.api_key) > 8 else "****"
-                click.echo(f"  api_key: {masked}")
-            else:
-                click.echo(f"  api_key: (not set)")
-        
-        click.echo(f"  canvas_base_url: {config_obj.canvas_base_url or '(not set)'}")
-        click.echo(f"  credential_file: {config_obj.credential_file or '(default)'}")
-        click.echo()
-        click.echo(f"  prune_apply: {config_obj.prune_apply}")
-        click.echo(f"  prune_assignments: {config_obj.prune_assignments}")
-        click.echo(f"  watch_debounce: {config_obj.watch_debounce}s")
-        
-        if config_obj.extra:
-            click.echo()
-            click.echo("  Custom variables:")
-            for key, value in config_obj.extra.items():
-                click.echo(f"    {key}: {value}")
-        
-        # Validation
-        issues = config_obj.validate()
-        if issues:
-            click.echo()
-            click.echo("⚠️  Configuration issues:")
-            for issue in issues:
-                click.echo(f"    - {issue}")
-        else:
-            click.echo()
-            click.echo("✅ Configuration is valid")
-            
-    except ImportError:
-        # Fall back to basic config display
-        click.echo("  (Note: New config system not available, showing basic info)")
-        click.echo()
-        
-        course_id = ctx.get_course_id()
-        click.echo(f"  course_id: {course_id or '(not set)'}")
-        
-        cred_file = Path.home() / ".canvas" / "credentials.txt"
-        if cred_file.exists():
-            click.echo(f"  credentials: {cred_file}")
-        else:
-            click.echo(f"  credentials: (not found)")
-    
-    except Exception as e:
-        click.echo(f"\n❌ Error loading configuration: {e}")
-
-
-# ============================================================================
 # Sync Commands
 # ============================================================================
 
 @cli.command()
 @click.option('--watch', is_flag=True, help='Watch for changes and auto-sync')
+@click.option('--dry-run', is_flag=True, help='Show what would happen without making changes')
 @click.option('--course-id', type=int, help='Override course ID')
 @click.option('--assets-only', is_flag=True, help='Only upload assets, skip content')
 @click.pass_obj
-def sync(ctx: ZaphodContext, watch: bool, course_id: Optional[int], assets_only: bool):
+def sync(ctx: ZaphodContext, watch: bool, dry_run: bool, course_id: Optional[int], assets_only: bool):
     """
     Sync local content to Canvas
     
     Examples:
         zaphod sync                    # Sync once
+        zaphod sync --dry-run          # Preview what would happen
         zaphod sync --watch            # Watch and auto-sync
         zaphod sync --course-id 12345  # Override course ID
         zaphod sync --assets-only      # Only upload media files
     """
+    if watch and dry_run:
+        click.echo("❌ Cannot use --watch and --dry-run together", err=True)
+        sys.exit(1)
+    
+    if dry_run:
+        _run_dry_run(ctx, course_id)
+        return
+    
     if watch:
-        click.echo("👁 Starting watch mode (Ctrl+C to stop)...")
+        click.echo("🔄 Starting watch mode (Ctrl+C to stop)...")
         click.echo(f"📁 Watching: {ctx.course_root}")
         click.echo()
         
@@ -488,17 +205,190 @@ def sync(ctx: ZaphodContext, watch: bool, course_id: Optional[int], assets_only:
         click.echo("\n✅ Sync complete!")
 
 
+def _run_dry_run(ctx: ZaphodContext, course_id: Optional[int]):
+    """
+    Run a dry-run sync that shows what would happen without making changes.
+    """
+    click.echo("🔍 DRY RUN - No changes will be made to Canvas\n")
+    click.echo("=" * 60)
+    
+    # Get course ID
+    cid = str(course_id) if course_id else ctx.get_course_id()
+    if not cid:
+        click.echo("❌ No course ID found. Set COURSE_ID or use --course-id", err=True)
+        sys.exit(1)
+    
+    click.echo(f"📋 Course ID: {cid}")
+    click.echo(f"📁 Course Root: {ctx.course_root}")
+    click.echo("=" * 60)
+    
+    # Step 1: Process frontmatter (this is local-only, safe to run)
+    click.echo("\n📝 Processing frontmatter...")
+    env = {"COURSE_ID": cid}
+    result = ctx.run_script("frontmatter_to_meta.py", env=env)
+    if result.returncode != 0:
+        click.echo("⚠️  Frontmatter processing had warnings/errors")
+    
+    # Step 2: Analyze what would be published
+    click.echo("\n" + "=" * 60)
+    click.echo("📤 CONTENT THAT WOULD BE PUBLISHED:")
+    click.echo("=" * 60)
+    
+    pages_dir = ctx.pages_dir
+    if not pages_dir.exists():
+        click.echo("❌ No pages/ directory found")
+        return
+    
+    # Collect content by type
+    content = {
+        "pages": [],
+        "assignments": [],
+        "links": [],
+        "files": [],
+    }
+    
+    for ext, content_type in [(".page", "pages"), (".assignment", "assignments"), 
+                               (".link", "links"), (".file", "files")]:
+        for folder in pages_dir.rglob(f"*{ext}"):
+            meta_path = folder / "meta.json"
+            if meta_path.exists():
+                try:
+                    meta = json.loads(meta_path.read_text())
+                    content[content_type].append({
+                        "name": meta.get("name", folder.name),
+                        "folder": folder.name,
+                        "published": meta.get("published", False),
+                        "modules": meta.get("modules", []),
+                    })
+                except Exception as e:
+                    click.echo(f"  ⚠️  Could not read {folder.name}: {e}")
+    
+    # Display content summary
+    for content_type, items in content.items():
+        if items:
+            click.echo(f"\n{content_type.upper()} ({len(items)}):")
+            for item in sorted(items, key=lambda x: x["name"]):
+                status = "✓" if item["published"] else "○"
+                modules = ", ".join(item["modules"]) if item["modules"] else "No modules"
+                click.echo(f"  {status} {item['name']}")
+                click.echo(f"      └─ {modules}")
+    
+    # Step 3: Analyze modules
+    click.echo("\n" + "=" * 60)
+    click.echo("📚 MODULES THAT WOULD BE CREATED/UPDATED:")
+    click.echo("=" * 60)
+    
+    all_modules = set()
+    for content_type, items in content.items():
+        for item in items:
+            all_modules.update(item["modules"])
+    
+    # Check module_order.yaml
+    module_order_path = ctx.course_root / "modules" / "module_order.yaml"
+    ordered_modules = []
+    if module_order_path.exists():
+        try:
+            import yaml
+            data = yaml.safe_load(module_order_path.read_text())
+            if isinstance(data, dict):
+                ordered_modules = data.get("modules", [])
+            elif isinstance(data, list):
+                ordered_modules = data
+        except Exception:
+            pass
+    
+    if ordered_modules:
+        click.echo("\nFrom module_order.yaml:")
+        for m in ordered_modules:
+            in_content = "✓" if m in all_modules else "○"
+            click.echo(f"  {in_content} {m}")
+    
+    extra_modules = all_modules - set(ordered_modules)
+    if extra_modules:
+        click.echo("\nFrom content (not in module_order.yaml):")
+        for m in sorted(extra_modules):
+            click.echo(f"  + {m}")
+    
+    # Step 4: Check for outcomes
+    click.echo("\n" + "=" * 60)
+    click.echo("🎯 OUTCOMES:")
+    click.echo("=" * 60)
+    
+    outcomes_path = ctx.course_root / "outcomes" / "outcomes.yaml"
+    outcomes = []
+    if outcomes_path.exists():
+        try:
+            import yaml
+            data = yaml.safe_load(outcomes_path.read_text())
+            outcomes = data.get("course_outcomes", [])
+            click.echo(f"\n{len(outcomes)} outcome(s) would be synced:")
+            for o in outcomes:
+                click.echo(f"  • {o.get('code', '?')}: {o.get('title', 'Untitled')}")
+        except Exception as e:
+            click.echo(f"  ⚠️  Could not read outcomes: {e}")
+    else:
+        click.echo("\n  No outcomes/outcomes.yaml found")
+    
+    # Step 5: Check for quizzes
+    click.echo("\n" + "=" * 60)
+    click.echo("❓ QUIZZES:")
+    click.echo("=" * 60)
+    
+    quiz_dir = ctx.course_root / "quiz-banks"
+    quiz_files = []
+    if quiz_dir.exists():
+        quiz_files = list(quiz_dir.glob("*.quiz.txt"))
+        if quiz_files:
+            click.echo(f"\n{len(quiz_files)} quiz file(s) would be synced:")
+            for qf in sorted(quiz_files):
+                click.echo(f"  • {qf.stem}")
+        else:
+            click.echo("\n  No .quiz.txt files found")
+    else:
+        click.echo("\n  No quiz-banks/ directory found")
+    
+    # Step 6: Check for rubrics
+    click.echo("\n" + "=" * 60)
+    click.echo("📊 RUBRICS:")
+    click.echo("=" * 60)
+    
+    rubric_count = 0
+    for folder in pages_dir.rglob("*.assignment"):
+        for rubric_name in ["rubric.yaml", "rubric.yml", "rubric.json"]:
+            if (folder / rubric_name).exists():
+                rubric_count += 1
+                click.echo(f"  • {folder.name}/{rubric_name}")
+                break
+    
+    if rubric_count == 0:
+        click.echo("\n  No rubrics found in assignments")
+    
+    # Summary
+    click.echo("\n" + "=" * 60)
+    click.echo("📋 SUMMARY:")
+    click.echo("=" * 60)
+    total_content = sum(len(items) for items in content.values())
+    click.echo(f"""
+  Content items:  {total_content}
+  Modules:        {len(all_modules)}
+  Outcomes:       {len(outcomes)}
+  Quizzes:        {len(quiz_files)}
+  Rubrics:        {rubric_count}
+""")
+    click.echo("Run 'zaphod sync' to apply these changes to Canvas.")
+
+
 # ============================================================================
 # Content Management
 # ============================================================================
 
-@cli.command()
+@cli.command('list')
 @click.option('--type', 'content_type', type=click.Choice(['page', 'assignment', 'link', 'file', 'all']), 
               default='all', help='Filter by content type')
 @click.option('--module', help='Filter by module name')
 @click.option('--json', 'as_json', is_flag=True, help='Output as JSON')
 @click.pass_obj
-def list(ctx: ZaphodContext, content_type: str, module: Optional[str], as_json: bool):
+def list_content(ctx: ZaphodContext, content_type: str, module: Optional[str], as_json: bool):
     """
     List course content
     
@@ -695,8 +585,8 @@ def validate(ctx: ZaphodContext, fix: bool):
                         folder_issues.append(f"Missing required field: {field}")
                 
                 # Type-specific validation
-                item_type = meta.get("type", "").lower()
-                if item_type == "assignment":
+                content_type = meta.get("type", "").lower()
+                if content_type == "assignment":
                     if not meta.get("points_possible"):
                         if fix:
                             meta["points_possible"] = 100
@@ -705,7 +595,7 @@ def validate(ctx: ZaphodContext, fix: bool):
                         else:
                             folder_issues.append("Missing points_possible")
                 
-                elif item_type == "link":
+                elif content_type == "link":
                     if not meta.get("external_url"):
                         folder_issues.append("Missing external_url")
                 
@@ -778,7 +668,7 @@ def prune(ctx: ZaphodContext, dry_run: bool, assignments: bool):
 
 
 # ============================================================================
-# Info & Status
+# Info & Config
 # ============================================================================
 
 @cli.command()
@@ -786,12 +676,6 @@ def prune(ctx: ZaphodContext, dry_run: bool, assignments: bool):
 def info(ctx: ZaphodContext):
     """
     Show course information and status
-    
-    Displays:
-    - Course metadata
-    - Content statistics
-    - Last sync time
-    - Configuration
     """
     click.echo("📊 Course Information\n")
     click.echo("=" * 60)
@@ -801,18 +685,10 @@ def info(ctx: ZaphodContext):
     if course_id:
         click.echo(f"Course ID: {course_id}")
     else:
-        click.echo("Course ID: Not set (use COURSE_ID env var or zaphod.yaml)")
+        click.echo("Course ID: Not set (use COURSE_ID env var)")
     
     click.echo(f"Course Root: {ctx.course_root}")
     click.echo(f"Zaphod Scripts: {ctx.zaphod_root or 'Not found'}")
-    
-    # Config file status
-    if (ctx.course_root / "zaphod.yaml").exists():
-        click.echo("Config File: zaphod.yaml ✓")
-    elif (ctx.course_root / "_course_metadata" / "defaults.json").exists():
-        click.echo("Config File: defaults.json (legacy)")
-    else:
-        click.echo("Config File: None")
     
     # Sync status
     click.echo("\n📅 Last Sync")
@@ -868,43 +744,133 @@ def info(ctx: ZaphodContext):
         click.echo("✅ All checks passed")
 
 
-# ============================================================================
-# UI Server
-# ============================================================================
+@cli.command()
+@click.option('--show-sources', is_flag=True, help='Show where each setting comes from')
+@click.pass_obj
+def config(ctx: ZaphodContext, show_sources: bool):
+    """
+    Display current configuration
+    
+    Shows resolved configuration from all sources:
+    - Environment variables
+    - zaphod.yaml
+    - _course_metadata/defaults.json
+    - ~/.zaphod/config.yaml
+    """
+    click.echo("⚙️  Zaphod Configuration\n")
+    click.echo("=" * 60)
+    
+    try:
+        from config_utils import get_config
+        cfg = get_config(ctx.course_root)
+        
+        click.echo(f"Course ID:      {cfg.course_id or 'Not set'}")
+        click.echo(f"Course Name:    {cfg.course_name or 'Not set'}")
+        click.echo(f"API URL:        {cfg.api_url or 'Not set'}")
+        click.echo(f"API Key:        {'***' + cfg.api_key[-4:] if cfg.api_key else 'Not set'}")
+        click.echo(f"Credential File: {cfg.credential_file or 'Default'}")
+        click.echo()
+        click.echo(f"Prune Apply:    {cfg.prune_apply}")
+        click.echo(f"Prune Assign:   {cfg.prune_assignments}")
+        click.echo(f"Watch Debounce: {cfg.watch_debounce}s")
+        
+        if cfg.replacements or cfg.style or cfg.markdown_extensions:
+            click.echo()
+            click.echo("Markdown2Canvas:")
+            if cfg.replacements:
+                click.echo(f"  Replacements: {cfg.replacements}")
+            if cfg.style:
+                click.echo(f"  Style:        {cfg.style}")
+            if cfg.markdown_extensions:
+                click.echo(f"  Extensions:   {', '.join(cfg.markdown_extensions)}")
+        
+        if show_sources and cfg._sources:
+            click.echo()
+            click.echo("Sources:")
+            for key, source in sorted(cfg._sources.items()):
+                click.echo(f"  {key}: {source}")
+                
+    except ImportError:
+        click.echo("❌ config_utils not available")
+        click.echo("\nFallback info:")
+        click.echo(f"  Course ID: {ctx.get_course_id() or 'Not set'}")
+
 
 @cli.command()
-@click.option('--port', default=8000, help='Port to run UI server on')
-@click.option('--no-browser', is_flag=True, help='Do not open browser automatically')
+@click.option('--course-id', required=True, type=int, help='Canvas course ID')
+@click.option('--with-yaml', is_flag=True, help='Create zaphod.yaml instead of defaults.json')
 @click.pass_obj
-def ui(ctx: ZaphodContext, port: int, no_browser: bool):
+def init(ctx: ZaphodContext, course_id: int, with_yaml: bool):
     """
-    Launch web UI
+    Initialize a new Zaphod course
     
-    Starts a local web server with a graphical interface for
-    managing course content.
+    Creates the standard directory structure and configuration files.
     
     Examples:
-        zaphod ui                  # Start UI on port 8000
-        zaphod ui --port 3000      # Use different port
-        zaphod ui --no-browser     # Don't open browser
+        zaphod init --course-id 12345
+        zaphod init --course-id 12345 --with-yaml
     """
-    click.echo(f"🚀 Starting Zaphod UI on http://localhost:{port}")
-    click.echo("Press Ctrl+C to stop")
+    click.echo(f"🚀 Initializing Zaphod course in {ctx.course_root}\n")
     
-    if not no_browser:
-        time.sleep(1)
-        webbrowser.open(f"http://localhost:{port}")
+    # Create directories
+    dirs = ["pages", "assets", "quiz-banks", "outcomes", "modules", "rubrics", "_course_metadata"]
+    for d in dirs:
+        path = ctx.course_root / d
+        path.mkdir(parents=True, exist_ok=True)
+        click.echo(f"  📁 {d}/")
     
-    # Try to import and run the UI
-    try:
-        # This would be your FastAPI app from the UI implementation
-        click.echo("\n⚠️  UI not yet implemented")
-        click.echo("Run the standalone UI server instead:")
-        click.echo(f"  python simple_ui.py")
-    except ImportError:
-        click.echo("\n❌ UI dependencies not installed", err=True)
-        click.echo("Install with: pip install fastapi uvicorn", err=True)
-        sys.exit(1)
+    # Create config file
+    if with_yaml:
+        config_path = ctx.course_root / "zaphod.yaml"
+        config_content = f"""# Zaphod Configuration
+course_id: {course_id}
+credential_file: ~/.canvas/credentials.txt
+
+prune:
+  apply: true
+  assignments: true
+
+watch:
+  debounce: 2.0
+"""
+        config_path.write_text(config_content)
+        click.echo(f"  📄 zaphod.yaml")
+    else:
+        config_path = ctx.course_root / "_course_metadata" / "defaults.json"
+        config_content = json.dumps({"course_id": str(course_id)}, indent=2)
+        config_path.write_text(config_content)
+        click.echo(f"  📄 _course_metadata/defaults.json")
+    
+    # Create .gitignore
+    gitignore_path = ctx.course_root / ".gitignore"
+    if not gitignore_path.exists():
+        gitignore_content = """# Zaphod
+_course_metadata/upload_cache.json
+_course_metadata/watch_state.json
+*.pyc
+__pycache__/
+.venv/
+"""
+        gitignore_path.write_text(gitignore_content)
+        click.echo(f"  📄 .gitignore")
+    
+    # Create module_order.yaml
+    module_order_path = ctx.course_root / "modules" / "module_order.yaml"
+    if not module_order_path.exists():
+        module_order_path.write_text("modules:\n  - \"Module 1\"\n")
+        click.echo(f"  📄 modules/module_order.yaml")
+    
+    # Create outcomes.yaml
+    outcomes_path = ctx.course_root / "outcomes" / "outcomes.yaml"
+    if not outcomes_path.exists():
+        outcomes_path.write_text("course_outcomes: []\n")
+        click.echo(f"  📄 outcomes/outcomes.yaml")
+    
+    click.echo(f"\n✅ Course initialized!")
+    click.echo(f"\nNext steps:")
+    click.echo(f"  1. Create content in pages/")
+    click.echo(f"  2. Run 'zaphod sync --dry-run' to preview")
+    click.echo(f"  3. Run 'zaphod sync' to publish to Canvas")
 
 
 # ============================================================================
@@ -914,13 +880,8 @@ def ui(ctx: ZaphodContext, port: int, no_browser: bool):
 @cli.command()
 def version():
     """Show Zaphod version"""
-    click.echo("Zaphod CLI v1.1.0")
+    click.echo("Zaphod CLI v1.2.0")
     click.echo("Course management system for Canvas LMS")
-    click.echo()
-    click.echo("New in v1.1.0:")
-    click.echo("  - zaphod init: Initialize new courses")
-    click.echo("  - zaphod config: View configuration")
-    click.echo("  - YAML config file support (zaphod.yaml)")
 
 
 # ============================================================================
