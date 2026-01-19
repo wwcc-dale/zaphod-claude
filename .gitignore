@@ -5,4 +5,5 @@
 *.pyc
 .zaphod_watch_state.json
 courses
-zaphod/*.zip
+**/zaphod/*.zip
+.claude
