@@ -249,6 +249,17 @@ def run_pipeline(changed_files: list[Path]):
         else:
             print(f"[watch] WARN: quiz prune script not found at {quiz_prune_script}")
 
+        # Build media manifest (after all prune steps)
+        manifest_script = SCRIPT_DIR / "build_media_manifest.py"
+        if manifest_script.is_file():
+            fence(f"RUNNING: {manifest_script.name}")
+            subprocess.run(
+                [str(python_exe), str(manifest_script)],
+                cwd=str(COURSE_ROOT),
+                env=env,
+                check=False,
+            )
+
         fence("Zaphod pipeline complete")
     finally:
         PIPELINE_RUNNING = False
