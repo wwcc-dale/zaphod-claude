@@ -65,7 +65,9 @@ Incremental behavior:
 
 from __future__ import annotations
 
+import hashlib
 import html
+import json
 import os
 import re
 from dataclasses import dataclass, field
@@ -88,6 +90,67 @@ COURSE_ROOT = Path.cwd()
 PAGES_DIR = COURSE_ROOT / "pages"
 CONTENT_DIR = COURSE_ROOT / "content"  # Alternative name
 QUIZ_BANKS_DIR = COURSE_ROOT / "quiz-banks"
+METADATA_DIR = COURSE_ROOT / "_course_metadata"
+QUIZ_CACHE_FILE = METADATA_DIR / "quiz_cache.json"
+
+
+# ============================================================================
+# Cache Helpers
+# ============================================================================
+
+def load_quiz_cache() -> Dict[str, Any]:
+    """Load the quiz cache from disk."""
+    if QUIZ_CACHE_FILE.exists():
+        try:
+            return json.loads(QUIZ_CACHE_FILE.read_text())
+        except Exception as e:
+            print(f"[quiz:warn] Failed to load cache: {e}")
+    return {}
+
+
+def save_quiz_cache(cache: Dict[str, Any]):
+    """Save the quiz cache to disk."""
+    try:
+        METADATA_DIR.mkdir(parents=True, exist_ok=True)
+        QUIZ_CACHE_FILE.write_text(json.dumps(cache, indent=2))
+    except Exception as e:
+        print(f"[quiz:warn] Failed to save cache: {e}")
+
+
+def compute_quiz_hash(folder_path: Path) -> str:
+    """Compute a hash of the quiz folder content."""
+    index_path = folder_path / "index.md"
+    if not index_path.exists():
+        return ""
+    
+    content = index_path.read_text(encoding="utf-8")
+    return hashlib.md5(content.encode()).hexdigest()[:12]
+
+
+def quiz_needs_sync(folder_path: Path, cache: Dict[str, Any], force: bool = False) -> bool:
+    """Check if a quiz needs to be synced based on content hash."""
+    if force:
+        return True
+    
+    current_hash = compute_quiz_hash(folder_path)
+    cache_key = str(folder_path.relative_to(COURSE_ROOT))
+    
+    cached = cache.get(cache_key, {})
+    cached_hash = cached.get("hash")
+    
+    if cached_hash == current_hash:
+        return False
+    
+    return True
+
+
+def update_quiz_cache(folder_path: Path, quiz_id: int, cache: Dict[str, Any]):
+    """Update the cache with quiz info."""
+    cache_key = str(folder_path.relative_to(COURSE_ROOT))
+    cache[cache_key] = {
+        "hash": compute_quiz_hash(folder_path),
+        "canvas_id": quiz_id,
+    }
 
 
 # ============================================================================
@@ -550,15 +613,35 @@ def get_existing_quizzes(course) -> Dict[str, Any]:
 
 
 def delete_quiz_questions(quiz, api_url: str, api_key: str, course_id: int):
-    """Delete all questions from a quiz."""
+    """Delete all questions and question groups from a quiz."""
     headers = {"Authorization": f"Bearer {api_key}"}
     
-    # Get all questions
+    # Delete question groups FIRST (before questions)
+    groups_url = f"{api_url}/api/v1/courses/{course_id}/quizzes/{quiz.id}/groups"
+    try:
+        resp = requests.get(groups_url, headers=headers)
+        if resp.status_code == 200:
+            groups = resp.json()
+            if groups:
+                print(f"[quiz]   Deleting {len(groups)} question group(s)...")
+            for g in groups:
+                g_id = g.get("id")
+                if g_id:
+                    del_url = f"{groups_url}/{g_id}"
+                    del_resp = requests.delete(del_url, headers=headers)
+                    if del_resp.status_code not in (200, 204):
+                        print(f"[quiz:warn] Failed to delete group {g_id}: HTTP {del_resp.status_code}")
+    except Exception as e:
+        print(f"[quiz:warn] Error deleting question groups: {e}")
+    
+    # Then delete questions
     questions_url = f"{api_url}/api/v1/courses/{course_id}/quizzes/{quiz.id}/questions"
     try:
         resp = requests.get(questions_url, headers=headers, params={"per_page": 100})
         if resp.status_code == 200:
             questions = resp.json()
+            if questions:
+                print(f"[quiz]   Deleting {len(questions)} question(s)...")
             for q in questions:
                 q_id = q.get("id")
                 if q_id:
@@ -566,20 +649,6 @@ def delete_quiz_questions(quiz, api_url: str, api_key: str, course_id: int):
                     requests.delete(del_url, headers=headers)
     except Exception as e:
         print(f"[quiz:warn] Error deleting questions: {e}")
-    
-    # Delete question groups
-    groups_url = f"{api_url}/api/v1/courses/{course_id}/quizzes/{quiz.id}/groups"
-    try:
-        resp = requests.get(groups_url, headers=headers)
-        if resp.status_code == 200:
-            groups = resp.json()
-            for g in groups:
-                g_id = g.get("id")
-                if g_id:
-                    del_url = f"{groups_url}/{g_id}"
-                    requests.delete(del_url, headers=headers)
-    except Exception as e:
-        print(f"[quiz:warn] Error deleting question groups: {e}")
 
 
 def to_canvas_question_payload(pq: ParsedQuestion) -> Dict[str, Any]:
@@ -838,6 +907,11 @@ def main():
         action="store_true",
         help="Parse folders but don't create quizzes in Canvas"
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Force sync even if content hasn't changed"
+    )
     args = parser.parse_args()
     
     course_id = get_course_id()
@@ -847,6 +921,9 @@ def main():
     course_id_int = int(course_id)
     canvas, api_url, api_key = load_canvas()
     course = canvas.get_course(course_id_int)
+    
+    # Load quiz cache
+    quiz_cache = load_quiz_cache()
     
     # Determine which folders to process
     if args.folder:
@@ -881,8 +958,15 @@ def main():
         print(f"[quiz] Found {len(existing_quizzes)} existing quiz(es) in Canvas")
     
     success_count = 0
+    skipped_count = 0
     for folder in quiz_folders:
         print(f"[quiz] === {folder.name} ===")
+        
+        # Check if quiz needs sync (based on content hash)
+        if not quiz_needs_sync(folder, quiz_cache, force=args.force):
+            print(f"[quiz]   (unchanged, skipping)")
+            skipped_count += 1
+            continue
         
         quiz_data = parse_quiz_folder(folder)
         if not quiz_data:
@@ -911,11 +995,17 @@ def main():
         else:
             quiz = create_canvas_quiz(course, quiz_data, bank_map, existing_quizzes, api_url, api_key, course_id_int)
             if quiz:
+                # Update cache with new hash
+                update_quiz_cache(folder, quiz.id, quiz_cache)
                 success_count += 1
         
         print()
     
-    print(f"[quiz] Completed: {success_count}/{len(quiz_folders)} quiz(es)")
+    # Save cache
+    if not args.dry_run:
+        save_quiz_cache(quiz_cache)
+    
+    print(f"[quiz] Completed: {success_count} synced, {skipped_count} unchanged")
 
 
 if __name__ == "__main__":

@@ -77,11 +77,13 @@ def load_local_meta_maps():
         assignment_modules_by_name:    {assignment_name: [module_names]}
         file_modules_by_filename:      {filename: [module_names]}
         link_modules_by_url:           {external_url: [module_names]}
+        quiz_modules_by_name:          {quiz_name: [module_names]}
     """
     page_modules_by_title = {}
     assignment_modules_by_name = {}
     file_modules_by_filename = {}
     link_modules_by_url = {}
+    quiz_modules_by_name = {}
 
     if not PAGES_DIR.exists():
         print(f"[prune] No pages directory at {PAGES_DIR}")
@@ -90,6 +92,7 @@ def load_local_meta_maps():
             assignment_modules_by_name,
             file_modules_by_filename,
             link_modules_by_url,
+            quiz_modules_by_name,
         )
 
     for meta_path in PAGES_DIR.rglob("meta.json"):
@@ -120,12 +123,17 @@ def load_local_meta_maps():
             url = data.get("external_url")
             if url:
                 link_modules_by_url[url] = mods
+        elif t == "quiz":
+            name = data.get("name")
+            if name:
+                quiz_modules_by_name[name] = mods
 
     return (
         page_modules_by_title,
         assignment_modules_by_name,
         file_modules_by_filename,
         link_modules_by_url,
+        quiz_modules_by_name,
     )
 
 
@@ -228,6 +236,7 @@ def prune_module_items(
     assignment_modules_by_name,
     file_modules_by_filename,
     link_modules_by_url,
+    quiz_modules_by_name,
     apply=False,
 ):
     """
@@ -244,6 +253,7 @@ def prune_module_items(
     files_by_id = {f.id: f for f in course.get_files()}
     pages_by_title = {p.title: p for p in course.get_pages()}
     assignments_by_id = {a.id: a for a in course.get_assignments()}
+    quizzes_by_id = {q.id: q for q in course.get_quizzes()}
 
     slug_to_title = {
         getattr(p, "url", None): title for title, p in pages_by_title.items()
@@ -278,6 +288,12 @@ def prune_module_items(
                 external_url = getattr(item, "external_url", None)
                 if external_url:
                     desired_modules = link_modules_by_url.get(external_url)
+
+            elif itype == "Quiz":
+                content_id = getattr(item, "content_id", None)
+                q = quizzes_by_id.get(content_id)
+                if q:
+                    desired_modules = quiz_modules_by_name.get(q.title)
 
             if desired_modules is None:
                 continue
@@ -455,6 +471,7 @@ def main():
         assignment_modules_by_name,
         file_modules_by_filename,
         link_modules_by_url,
+        quiz_modules_by_name,
     ) = load_local_meta_maps()
 
     prune_module_items(
@@ -463,6 +480,7 @@ def main():
         assignment_modules_by_name,
         file_modules_by_filename,
         link_modules_by_url,
+        quiz_modules_by_name,
         apply=apply,
     )
 

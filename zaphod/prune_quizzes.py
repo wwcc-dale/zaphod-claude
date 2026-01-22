@@ -8,12 +8,12 @@ prune_quizzes.py (Zaphod)
 
 Prune quiz content for the current course:
 
-1) Delete Classic quizzes that have zero questions.
+1) Delete Classic quizzes that are not backed by a local .quiz/ folder.
 2) Delete question banks whose names do not correspond to any
-   quiz-banks/*.quiz.txt file.
+   quiz-banks/*.bank.md or quiz-banks/*.quiz.txt file.
 
 This script does NOT modify quiz import logic; it only inspects Canvas
-state vs local quiz-banks.
+state vs local content.
 
 Env:
     CANVAS_CREDENTIAL_FILE
@@ -23,17 +23,19 @@ Env:
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from typing import Dict, Any, Set
 from zaphod.config_utils import get_course_id
 
-from canvasapi import Canvas  # [web:261][web:264]
+from canvasapi import Canvas
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 SHARED_ROOT = SCRIPT_DIR.parent
 COURSE_ROOT = Path.cwd()
 QUIZ_BANKS_DIR = COURSE_ROOT / "quiz-banks"
+PAGES_DIR = COURSE_ROOT / "pages"
 
 
 def _truthy_env(name: str, default: bool = False) -> bool:
@@ -60,40 +62,91 @@ def load_canvas() -> Canvas:
     except KeyError as e:
         raise SystemExit(f"Credentials file must define API_KEY and API_URL. Missing: {e}")
 
-    return Canvas(api_url, api_key)  # [web:261]
+    return Canvas(api_url, api_key)
 
 
-def expected_quiz_stems_from_files() -> Set[str]:
+def get_local_quiz_names() -> Set[str]:
     """
-    Derive expected identifiers from quiz-banks/*.quiz.txt.
-
-    For now this is just the filename stem:
-        quiz-banks/week1.quiz.txt -> "week1"
+    Get quiz names from local .quiz/ folders by reading their meta.json or index.md.
     """
-    stems: Set[str] = set()
+    names: Set[str] = set()
+    if not PAGES_DIR.is_dir():
+        return names
+
+    for quiz_folder in PAGES_DIR.rglob("*.quiz"):
+        if not quiz_folder.is_dir():
+            continue
+        
+        # Try meta.json first
+        meta_path = quiz_folder / "meta.json"
+        if meta_path.exists():
+            try:
+                data = json.loads(meta_path.read_text(encoding="utf-8"))
+                name = data.get("name")
+                if name:
+                    names.add(name)
+                    continue
+            except Exception:
+                pass
+        
+        # Fall back to index.md frontmatter
+        index_path = quiz_folder / "index.md"
+        if index_path.exists():
+            try:
+                import yaml
+                content = index_path.read_text(encoding="utf-8")
+                if content.startswith("---"):
+                    end_idx = content.find("---", 3)
+                    if end_idx > 0:
+                        fm = yaml.safe_load(content[3:end_idx])
+                        if isinstance(fm, dict):
+                            name = fm.get("name")
+                            if name:
+                                names.add(name)
+            except Exception:
+                pass
+    
+    return names
+
+
+def get_local_bank_names() -> Set[str]:
+    """
+    Get expected bank names from quiz-banks/*.bank.md and *.quiz.txt files.
+    
+    Bank names are the file stems (e.g., "chapter1.bank" from "chapter1.bank.md").
+    """
+    names: Set[str] = set()
     if not QUIZ_BANKS_DIR.is_dir():
-        return stems
+        return names
 
+    # New format: *.bank.md
+    for path in QUIZ_BANKS_DIR.glob("*.bank.md"):
+        names.add(path.stem)  # "chapter1.bank"
+    
+    # Legacy format: *.quiz.txt
     for path in QUIZ_BANKS_DIR.glob("*.quiz.txt"):
-        stems.add(path.stem)
-    return stems
+        names.add(path.stem)  # "week1.quiz"
+    
+    return names
 
 
-def prune_empty_quizzes(course, apply: bool):
+def prune_orphan_quizzes(course, local_names: Set[str], apply: bool):
     """
-    Delete Classic quizzes with zero questions.
+    Delete quizzes that don't have a corresponding local .quiz/ folder.
     """
-    print("[prune:quiz] Checking for empty quizzes...")
+    print("[prune:quiz] Checking for orphan quizzes...")
+    print(f"[prune:quiz] Local quiz names: {sorted(local_names)}")
+    
     scanned = 0
     deleted = 0
 
-    for quiz in course.get_quizzes():  # [web:264]
+    for quiz in course.get_quizzes():
         scanned += 1
-        questions = list(quiz.get_questions())  # [web:261]
-        if questions:
+        
+        if quiz.title in local_names:
             continue
-
-        msg = f"[prune:quiz] EMPTY quiz '{quiz.title}' (id={quiz.id})"
+        
+        msg = f"[prune:quiz] Orphan quiz '{quiz.title}' (id={quiz.id})"
         if apply:
             quiz.delete()
             print(msg + " -> deleted")
@@ -101,40 +154,39 @@ def prune_empty_quizzes(course, apply: bool):
         else:
             print(msg + " -> would delete")
 
-    print(f"[prune:quiz] Scanned {scanned} quizzes, deleted {deleted} (empty).")
+    print(f"[prune:quiz] Scanned {scanned} quizzes, deleted {deleted} orphans.")
 
 
-def prune_stale_banks(course, apply: bool):
+def prune_stale_banks(course, local_names: Set[str], apply: bool):
     """
-    Delete question banks whose names do not match any quiz-banks/*.quiz.txt stem.
-
-    This is a coarse heuristic and may be refined later.
+    Delete question banks whose names do not match any local bank file.
     """
-    expected_stems = expected_quiz_stems_from_files()
-    print(f"[prune:banks] Expected stems from files: {sorted(expected_stems)}")
+    print(f"[prune:banks] Local bank names: {sorted(local_names)}")
 
-    if not expected_stems:
-        print("[prune:banks] No quiz-banks/*.quiz.txt files; skipping bank prune.")
+    if not local_names:
+        print("[prune:banks] No local bank files; skipping bank prune.")
         return
 
     try:
-        banks = list(course.get_question_banks())  # [web:208][web:221]
+        banks = list(course.get_question_banks())
     except AttributeError:
         print("[prune:banks] course.get_question_banks() not available; skipping.")
         return
 
     deleted = 0
     for bank in banks:
-        name = getattr(bank, "name", "") or ""
-        if name in expected_stems:
-            # Still backed by a local file
+        name = getattr(bank, "title", "") or getattr(bank, "name", "") or ""
+        if name in local_names:
             continue
 
         msg = f"[prune:banks] Stale bank '{name}' (id={bank.id})"
         if apply:
-            bank.delete()
-            print(msg + " -> deleted")
-            deleted += 1
+            try:
+                bank.delete()
+                print(msg + " -> deleted")
+                deleted += 1
+            except Exception as e:
+                print(msg + f" -> failed: {e}")
         else:
             print(msg + " -> would delete")
 
@@ -154,8 +206,15 @@ def main():
 
     print(f"[prune:quiz] Pruning quiz content in course {course_id} (apply={apply})")
 
-    prune_empty_quizzes(course, apply=apply)
-    prune_stale_banks(course, apply=apply)
+    # Get local quiz and bank names
+    local_quiz_names = get_local_quiz_names()
+    local_bank_names = get_local_bank_names()
+
+    # Prune orphan quizzes (not backed by local .quiz/ folder)
+    prune_orphan_quizzes(course, local_quiz_names, apply=apply)
+    
+    # Prune stale banks (not backed by local bank file)
+    prune_stale_banks(course, local_bank_names, apply=apply)
 
     print("[prune:quiz] Done.")
 

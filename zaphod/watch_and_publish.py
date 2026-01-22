@@ -144,6 +144,7 @@ def get_changed_files_since(last_ts: float) -> list[Path]:
             name == "index.md"
             or name == "outcomes.yaml"
             or name.endswith(".quiz.txt")
+            or name.endswith(".bank.md")
             or path == module_order_path
             or name in ("rubric.yaml", "rubric.yml", "rubric.json")
         ):
@@ -186,10 +187,11 @@ def run_pipeline(changed_files: list[Path]):
         steps: List[Path] = [
             SCRIPT_DIR / "frontmatter_to_meta.py",
             SCRIPT_DIR / "publish_all.py",
+            SCRIPT_DIR / "sync_banks.py",        # Import question banks (before quizzes)
+            SCRIPT_DIR / "sync_quizzes.py",      # Create/update quizzes (before modules)
             SCRIPT_DIR / "sync_modules.py",
             SCRIPT_DIR / "sync_clo_via_csv.py",
             SCRIPT_DIR / "sync_rubrics.py",
-            SCRIPT_DIR / "sync_quiz_banks.py",
         ]
 
         fence("Zaphod pipeline start")
@@ -274,7 +276,8 @@ class MarkdownChangeHandler(PatternMatchingEventHandler):
                 "*/index.md",                    # pages/*/index.md
                 "outcomes.yaml",
                 "modules/module_order.yaml",
-                "*.quiz.txt",
+                "*.quiz.txt",                    # Legacy quiz bank format
+                "*.bank.md",                     # New question bank format
                 "rubric.yaml",
                 "rubric.yml",
                 "rubric.json",
