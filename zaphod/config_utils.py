@@ -44,11 +44,11 @@ class ConfigurationError(Exception):
         super().__init__(self._format())
     
     def _format(self) -> str:
-        lines = ["", "=" * 70, f"❌ ConfigurationError", "=" * 70, "", self.message]
+        lines = ["", "=" * 70, f"âŒ ConfigurationError", "=" * 70, "", self.message]
         if self.context:
             lines.extend(["", "Context:"] + [f"  {k}: {v}" for k, v in self.context.items()])
         if self.suggestion:
-            lines.extend(["", "💡 Suggestion:", f"  {self.suggestion}"])
+            lines.extend(["", "[*] Suggestion:", f"  {self.suggestion}"])
         lines.extend(["", "=" * 70, ""])
         return "\n".join(lines)
 
@@ -248,16 +248,76 @@ class ConfigLoader:
         
         if cred_file.exists():
             try:
-                ns: Dict[str, Any] = {}
-                exec(cred_file.read_text(), ns)
-                if not self.config.api_url and "API_URL" in ns:
-                    self.config.api_url = ns["API_URL"]
+                # SECURITY: Parse credentials safely without exec()
+                api_url, api_key = _parse_credentials_file_safe(cred_file)
+                
+                if not self.config.api_url and api_url:
+                    self.config.api_url = api_url
                     self.config._sources["api_url"] = f"credentials:{cred_file.name}"
-                if not self.config.api_key and "API_KEY" in ns:
-                    self.config.api_key = ns["API_KEY"]
+                if not self.config.api_key and api_key:
+                    self.config.api_key = api_key
                     self.config._sources["api_key"] = f"credentials:{cred_file.name}"
+                    
+                # Check file permissions
+                _check_credential_file_permissions(cred_file)
+                    
             except Exception as e:
                 print(f"[config:warn] Failed to load credentials from {cred_file}: {e}")
+
+
+def _parse_credentials_file_safe(cred_file: Path) -> tuple:
+    """
+    Parse credentials file safely without exec().
+    
+    SECURITY: This replaces the dangerous exec() pattern that could
+    execute arbitrary code if the credentials file was compromised.
+    
+    Supports formats:
+    - API_KEY = "value" or API_KEY = 'value'
+    - API_KEY="value" (no spaces)
+    """
+    import re
+    content = cred_file.read_text(encoding="utf-8")
+    
+    api_key = None
+    api_url = None
+    
+    # Patterns to match different formats
+    patterns = [
+        # Python-style: API_KEY = "value" or API_KEY = 'value'
+        (r'API_KEY\s*=\s*["\']([^"\']+)["\']', r'API_URL\s*=\s*["\']([^"\']+)["\']'),
+        # No quotes: API_KEY = value
+        (r'API_KEY\s*=\s*(\S+)', r'API_URL\s*=\s*(\S+)'),
+    ]
+    
+    for key_pattern, url_pattern in patterns:
+        if api_key is None:
+            match = re.search(key_pattern, content)
+            if match:
+                api_key = match.group(1).strip().strip('"\'')
+        
+        if api_url is None:
+            match = re.search(url_pattern, content)
+            if match:
+                api_url = match.group(1).strip().strip('"\'')
+        
+        if api_key and api_url:
+            break
+    
+    return api_url, api_key
+
+
+def _check_credential_file_permissions(cred_file: Path):
+    """Warn if credential file has insecure permissions."""
+    import stat
+    try:
+        mode = os.stat(cred_file).st_mode
+        if mode & (stat.S_IRWXG | stat.S_IRWXO):
+            print(f"[config:SECURITY] Credentials file has insecure permissions: {cred_file}")
+            print(f"[config:SECURITY] Other users may be able to read your API key.")
+            print(f"[config:SECURITY] Fix with: chmod 600 {cred_file}")
+    except OSError:
+        pass  # Can't check permissions (e.g., Windows)
 
 
 # ============================================================================

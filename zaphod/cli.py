@@ -19,11 +19,57 @@ import subprocess
 import sys
 import os
 import json
+import re
 import webbrowser
 from pathlib import Path
 from typing import Optional, List
 from datetime import datetime
 import time
+
+
+# ============================================================================
+# Security Utilities
+# ============================================================================
+
+def _sanitize_filename(name: str) -> str:
+    r"""
+    Create a safe filename from user input.
+    
+    SECURITY: Prevents path traversal and shell injection by:
+    - Rejecting path traversal attempts (.., /, \)
+    - Rejecting shell metacharacters (; | & $ ` etc.)
+    - Limiting to alphanumeric, spaces, hyphens, underscores
+    """
+    if not name:
+        raise click.ClickException("Name cannot be empty")
+    
+    # SECURITY: Check for dangerous patterns BEFORE sanitization
+    # Path traversal attempts
+    if '..' in name:
+        raise click.ClickException(f"Invalid name: path traversal not allowed (contains '..')")
+    
+    if name.startswith('/') or name.startswith('\\'):
+        raise click.ClickException(f"Invalid name: absolute paths not allowed")
+    
+    # Shell injection attempts
+    shell_chars = [';', '|', '&', '$', '`', '(', ')', '{', '}', '<', '>', '!', '\n', '\r']
+    for char in shell_chars:
+        if char in name:
+            raise click.ClickException(f"Invalid name: shell metacharacter '{char}' not allowed")
+    
+    # Now sanitize for filesystem safety (remove remaining special chars)
+    safe = re.sub(r'[^\w\s-]', '', name)
+    safe = re.sub(r'[-\s]+', '-', safe)
+    safe = safe.strip('-').lower()
+    
+    if not safe:
+        raise click.ClickException(f"Name '{name}' results in empty filename after sanitization")
+    
+    # Final safety check on the result
+    if '..' in safe or safe.startswith('/') or safe.startswith('\\'):
+        raise click.ClickException(f"Invalid name after sanitization: {safe}")
+    
+    return safe
 
 
 # ============================================================================
@@ -79,12 +125,12 @@ class ZaphodContext:
     def run_script(self, script_name: str, env: Optional[dict] = None) -> subprocess.CompletedProcess:
         """Run a Zaphod script"""
         if not self.zaphod_root:
-            click.echo("✗ Could not find Zaphod scripts directory", err=True)
+            click.echo("[x] Could not find Zaphod scripts directory", err=True)
             sys.exit(1)
         
         script_path = self.zaphod_root / script_name
         if not script_path.exists():
-            click.echo(f"✗ Script not found: {script_path}", err=True)
+            click.echo(f"[x] Script not found: {script_path}", err=True)
             sys.exit(1)
         
         full_env = os.environ.copy()
@@ -138,8 +184,8 @@ def sync(ctx: ZaphodContext, watch: bool, course_id: Optional[int], assets_only:
         zaphod sync --assets-only      # Only upload media files
     """
     if watch:
-        click.echo("👀 Starting watch mode (Ctrl+C to stop)...")
-        click.echo(f"📂 Watching: {ctx.course_root}")
+        click.echo("[*] Starting watch mode (Ctrl+C to stop)...")
+        click.echo(f"[*] Watching: {ctx.course_root}")
         click.echo()
         
         env = {}
@@ -149,9 +195,9 @@ def sync(ctx: ZaphodContext, watch: bool, course_id: Optional[int], assets_only:
         try:
             ctx.run_script("watch_and_publish.py", env=env)
         except KeyboardInterrupt:
-            click.echo("\n\n👋 Stopping watch mode...")
+            click.echo("\n\n[wave] Stopping watch mode...")
     else:
-        click.echo("🚀 Running sync pipeline...")
+        click.echo("[*] Running sync pipeline...")
         
         env = {}
         if course_id:
@@ -159,27 +205,28 @@ def sync(ctx: ZaphodContext, watch: bool, course_id: Optional[int], assets_only:
         
         # Run the pipeline steps manually
         steps = [
-            ("frontmatter_to_meta.py", "📝 Processing frontmatter"),
+            ("frontmatter_to_meta.py", "[*] Processing frontmatter"),
         ]
         
         if assets_only:
-            steps.append(("publish_all.py --assets-only", "📦 Uploading assets"))
+            steps.append(("publish_all.py --assets-only", "[pkg] Uploading assets"))
         else:
             steps.extend([
-                ("publish_all.py", "📤 Publishing content"),
-                ("sync_modules.py", "📚 Syncing modules"),
-                ("sync_clo_via_csv.py", "🎯 Syncing outcomes"),
-                ("sync_rubrics.py", "📋 Syncing rubrics"),
-                ("sync_quiz_banks.py", "❓ Syncing quizzes"),
+                ("publish_all.py", "[up] Publishing content"),
+                ("sync_banks.py", "[bank] Importing question banks"),  # Banks before quizzes
+                ("sync_quizzes.py", "[quiz] Syncing quiz folders"),    # Quizzes before modules
+                ("sync_modules.py", "[books] Syncing modules"),
+                ("sync_clo_via_csv.py", "[target] Syncing outcomes"),
+                ("sync_rubrics.py", "[list] Syncing rubrics"),
             ])
         
         for script, description in steps:
             click.echo(f"\n{description}...")
             result = ctx.run_script(script.split()[0], env=env)
             if result.returncode != 0:
-                click.echo(f"⚠️  {script} completed with warnings/errors")
+                click.echo(f"[!]  {script} completed with warnings/errors")
         
-        click.echo("\n✅ Sync complete!")
+        click.echo("\n[v] Sync complete!")
 
 
 # ============================================================================
@@ -203,7 +250,7 @@ def list(ctx: ZaphodContext, content_type: str, module: Optional[str], as_json: 
         zaphod list --json               # JSON output
     """
     if not ctx.pages_dir.exists():
-        click.echo("✗ No pages/ directory found", err=True)
+        click.echo("[x] No pages/ directory found", err=True)
         sys.exit(1)
     
     items = []
@@ -232,7 +279,7 @@ def list(ctx: ZaphodContext, content_type: str, module: Optional[str], as_json: 
                     "path": str(folder.relative_to(ctx.course_root)),
                 })
             except Exception as e:
-                click.echo(f"⚠️  Could not read {folder.name}: {e}", err=True)
+                click.echo(f"[!]  Could not read {folder.name}: {e}", err=True)
     
     if as_json:
         click.echo(json.dumps(items, indent=2))
@@ -252,7 +299,7 @@ def list(ctx: ZaphodContext, content_type: str, module: Optional[str], as_json: 
         for content_type, type_items in sorted(by_type.items()):
             click.echo(f"\n{content_type.upper()}S ({len(type_items)}):")
             for item in sorted(type_items, key=lambda x: x["name"]):
-                status = "✓" if item["published"] else "○"
+                status = "âœ“" if item["published"] else "[ ]"
                 modules_str = ", ".join(item["modules"]) if item["modules"] else "No modules"
                 click.echo(f"  {status} {item['name']}")
                 click.echo(f"     {modules_str}")
@@ -272,12 +319,20 @@ def new(ctx: ZaphodContext, content_type: str, name: str, module: tuple):
         zaphod new --type page --name "Welcome"
         zaphod new --type assignment --name "Project 1" --module "Week 1"
     """
-    # Generate folder name
-    folder_name = f"{name.lower().replace(' ', '-')}.{content_type}"
+    # SECURITY: Sanitize folder name to prevent path traversal
+    safe_name = _sanitize_filename(name)
+    folder_name = f"{safe_name}.{content_type}"
     folder_path = ctx.pages_dir / folder_name
     
+    # SECURITY: Verify path is within pages directory
+    try:
+        folder_path.resolve().relative_to(ctx.pages_dir.resolve())
+    except ValueError:
+        click.echo(f"Error: Invalid name (path traversal detected): {name}", err=True)
+        sys.exit(1)
+    
     if folder_path.exists():
-        click.echo(f"✗ Content already exists: {folder_path}", err=True)
+        click.echo(f"Content already exists: {folder_path}", err=True)
         sys.exit(1)
     
     # Create folder
@@ -324,8 +379,8 @@ def new(ctx: ZaphodContext, content_type: str, name: str, module: tuple):
     index_path = folder_path / "index.md"
     index_path.write_text("\n".join(frontmatter))
     
-    click.echo(f"✅ Created: {folder_path}")
-    click.echo(f"📝 Edit: {index_path}")
+    click.echo(f"[v] Created: {folder_path}")
+    click.echo(f"[*] Edit: {index_path}")
 
 
 # ============================================================================
@@ -351,7 +406,7 @@ def validate(ctx: ZaphodContext, verbose: bool):
         zaphod validate           # Check for issues
         zaphod validate -v        # Verbose output
     """
-    click.echo(f"🔍 Validating course: {ctx.course_root}\n")
+    click.echo(f"[note]Â Validating course: {ctx.course_root}\n")
     
     # Import the validator
     try:
@@ -403,15 +458,15 @@ def prune(ctx: ZaphodContext, dry_run: bool, assignments: bool):
         env["ZAPHOD_PRUNE_ASSIGNMENTS"] = "true"
     
     if dry_run:
-        click.echo("🔍 Dry run - showing what would be deleted...\n")
+        click.echo("[note]Â Dry run - showing what would be deleted...\n")
     else:
-        click.confirm("⚠️  This will delete content from Canvas. Continue?", abort=True)
-        click.echo("\n🗑️  Pruning orphaned content...\n")
+        click.confirm("[!]  This will delete content from Canvas. Continue?", abort=True)
+        click.echo("\n[*]  Pruning orphaned content...\n")
     
     ctx.run_script("prune_canvas_content.py", env=env)
     
     if not dry_run:
-        click.echo("\n✅ Prune complete!")
+        click.echo("\n[v] Prune complete!")
 
 
 # ============================================================================
@@ -430,7 +485,7 @@ def info(ctx: ZaphodContext):
     - Last sync time
     - Configuration
     """
-    click.echo("📋 Course Information\n")
+    click.echo("[list] Course Information\n")
     click.echo("=" * 60)
     
     # Course metadata
@@ -444,7 +499,7 @@ def info(ctx: ZaphodContext):
     click.echo(f"Zaphod Scripts: {ctx.zaphod_root or 'Not found'}")
     
     # Sync status
-    click.echo("\n📅 Last Sync")
+    click.echo("\n[*] Last Sync")
     click.echo("-" * 60)
     state_file = ctx.metadata_dir / "watch_state.json"
     if state_file.exists():
@@ -460,7 +515,7 @@ def info(ctx: ZaphodContext):
         click.echo("Last Run: Never")
     
     # Content statistics
-    click.echo("\n📚 Content Statistics")
+    click.echo("\n[books] Content Statistics")
     click.echo("-" * 60)
     
     if ctx.pages_dir.exists():
@@ -487,24 +542,24 @@ def info(ctx: ZaphodContext):
             click.echo(f"Legacy Banks: {legacy_count} (consider migrating to .bank.md)")
     
     # Check for issues
-    click.echo("\n🔍 Quick Check")
+    click.echo("\n[note]Â Quick Check")
     click.echo("-" * 60)
     
     checks = []
     if not ctx.zaphod_root:
-        checks.append("⚠️  Zaphod scripts not found")
+        checks.append("[!]  Zaphod scripts not found")
     if not course_id:
-        checks.append("⚠️  Course ID not configured")
+        checks.append("[!]  Course ID not configured")
     
     cred_file = Path(os.environ.get("CANVAS_CREDENTIAL_FILE", Path.home() / ".canvas" / "credentials.txt"))
     if not cred_file.exists():
-        checks.append(f"⚠️  Canvas credentials not found at {cred_file}")
+        checks.append(f"[!]  Canvas credentials not found at {cred_file}")
     
     if checks:
         for check in checks:
             click.echo(check)
     else:
-        click.echo("✅ All checks passed")
+        click.echo("[v] All checks passed")
 
 
 # ============================================================================
@@ -532,11 +587,11 @@ def export(ctx: ZaphodContext, output: Optional[str], title: Optional[str], expo
         zaphod export --format qti              # Quizzes only (future)
     """
     if export_format == 'qti':
-        click.echo("⚠️  QTI-only export not yet implemented")
+        click.echo("[!]  QTI-only export not yet implemented")
         click.echo("Use --format cartridge for full course export (includes quizzes)")
         sys.exit(1)
     
-    click.echo(f"📦 Exporting course from: {ctx.course_root}")
+    click.echo(f"[pkg] Exporting course from: {ctx.course_root}")
     
     # Build command
     script_path = ctx.zaphod_root / "export_cartridge.py" if ctx.zaphod_root else None
@@ -546,7 +601,7 @@ def export(ctx: ZaphodContext, output: Optional[str], title: Optional[str], expo
         script_path = Path(__file__).parent / "export_cartridge.py"
     
     if not script_path.exists():
-        click.echo("✗ export_cartridge.py not found", err=True)
+        click.echo("[x] export_cartridge.py not found", err=True)
         sys.exit(1)
     
     cmd = [ctx.python_exe, str(script_path)]
@@ -559,9 +614,9 @@ def export(ctx: ZaphodContext, output: Optional[str], title: Optional[str], expo
     result = subprocess.run(cmd, cwd=str(ctx.course_root))
     
     if result.returncode == 0:
-        click.echo("\n✅ Export complete!")
+        click.echo("\n[v] Export complete!")
     else:
-        click.echo("\n✗ Export failed", err=True)
+        click.echo("\n[x] Export failed", err=True)
         sys.exit(result.returncode)
 
 
@@ -585,7 +640,7 @@ def ui(ctx: ZaphodContext, port: int, no_browser: bool):
         zaphod ui --port 3000      # Use different port
         zaphod ui --no-browser     # Don't open browser
     """
-    click.echo(f"🚀 Starting Zaphod UI on http://localhost:{port}")
+    click.echo(f"[*] Starting Zaphod UI on http://localhost:{port}")
     click.echo("Press Ctrl+C to stop")
     
     if not no_browser:
@@ -595,11 +650,11 @@ def ui(ctx: ZaphodContext, port: int, no_browser: bool):
     # Try to import and run the UI
     try:
         # This would be your FastAPI app from the UI implementation
-        click.echo("\n⚠️  UI not yet implemented")
+        click.echo("\n[!]  UI not yet implemented")
         click.echo("Run the standalone UI server instead:")
         click.echo(f"  python simple_ui.py")
     except ImportError:
-        click.echo("\n✗ UI dependencies not installed", err=True)
+        click.echo("\n[x] UI dependencies not installed", err=True)
         click.echo("Install with: pip install fastapi uvicorn", err=True)
         sys.exit(1)
 

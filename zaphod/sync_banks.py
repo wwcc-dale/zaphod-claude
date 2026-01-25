@@ -12,9 +12,9 @@ the QTI Content Migration API.
 Bank files live in quiz-banks/ and contain questions in a simple text format:
 
     quiz-banks/
-    ├── chapter1.bank.md
-    ├── chapter2.bank.md
-    └── final-exam-pool.bank.md
+    [?]œ[?]€[?]€ chapter1.bank.md
+    [?]œ[?]€[?]€ chapter2.bank.md
+    [?]”[?]€[?]€ final-exam-pool.bank.md
 
 File format (*.bank.md):
     ---
@@ -126,24 +126,89 @@ class BankData:
 # ============================================================================
 
 def load_canvas_credentials() -> Tuple[str, str]:
-    """Load Canvas API credentials and return (api_url, api_key)."""
+    """
+    Load Canvas API credentials safely.
+    
+    SECURITY: Uses safe parsing instead of exec() to prevent code injection.
+    
+    Returns:
+        Tuple of (api_url, api_key)
+    """
+    # Try environment variables first
+    env_key = os.environ.get("CANVAS_API_KEY")
+    env_url = os.environ.get("CANVAS_API_URL")
+    if env_key and env_url:
+        return env_url.rstrip("/"), env_key
+    
+    # Fall back to credential file
     cred_path = os.environ.get("CANVAS_CREDENTIAL_FILE")
     if not cred_path:
-        raise SystemExit("CANVAS_CREDENTIAL_FILE is not set")
+        raise SystemExit(
+            "Canvas credentials not found. Set CANVAS_API_KEY and CANVAS_API_URL "
+            "environment variables, or set CANVAS_CREDENTIAL_FILE."
+        )
 
     cred_file = Path(cred_path)
     if not cred_file.is_file():
         raise SystemExit(f"CANVAS_CREDENTIAL_FILE does not exist: {cred_file}")
 
-    ns: Dict[str, Any] = {}
-    exec(cred_file.read_text(encoding="utf-8"), ns)
-    try:
-        api_key = ns["API_KEY"]
-        api_url = ns["API_URL"]
-    except KeyError as e:
-        raise SystemExit(f"Credentials file must define API_KEY and API_URL. Missing: {e}")
+    # SECURITY: Parse credentials safely without exec()
+    api_key, api_url = _parse_credentials_safe(cred_file)
+    
+    if not api_key or not api_url:
+        raise SystemExit(
+            f"Credentials file must define API_KEY and API_URL: {cred_file}"
+        )
+    
+    # Check file permissions
+    _warn_insecure_permissions(cred_file)
 
     return api_url.rstrip("/"), api_key
+
+
+def _parse_credentials_safe(cred_file: Path) -> Tuple[Optional[str], Optional[str]]:
+    """Parse credentials file safely without exec()."""
+    content = cred_file.read_text(encoding="utf-8")
+    
+    api_key = None
+    api_url = None
+    
+    # Match API_KEY = "value" or API_KEY = 'value' or API_KEY = value
+    key_patterns = [
+        r'API_KEY\s*=\s*["\']([^"\']+)["\']',
+        r'API_KEY\s*=\s*(\S+)',
+    ]
+    url_patterns = [
+        r'API_URL\s*=\s*["\']([^"\']+)["\']',
+        r'API_URL\s*=\s*(\S+)',
+    ]
+    
+    for pattern in key_patterns:
+        match = re.search(pattern, content)
+        if match:
+            api_key = match.group(1).strip().strip('"\'')
+            break
+    
+    for pattern in url_patterns:
+        match = re.search(pattern, content)
+        if match:
+            api_url = match.group(1).strip().strip('"\'')
+            break
+    
+    return api_key, api_url
+
+
+def _warn_insecure_permissions(cred_file: Path):
+    """Warn if credential file has insecure permissions."""
+    import stat
+    try:
+        mode = os.stat(cred_file).st_mode
+        if mode & (stat.S_IRWXG | stat.S_IRWXO):
+            print(f"[bank:SECURITY] Credentials file has insecure permissions: {cred_file}")
+            print(f"[bank:SECURITY] Fix with: chmod 600 {cred_file}")
+    except OSError:
+        pass
+
 
 
 # ============================================================================
@@ -678,19 +743,27 @@ def create_qti_package(bank: BankData) -> bytes:
 # Canvas Upload
 # ============================================================================
 
+# SECURITY: Request timeout constants
+REQUEST_TIMEOUT = (10, 30)      # (connect, read) - standard requests
+UPLOAD_TIMEOUT = (10, 120)      # longer timeout for file uploads
+MIGRATION_TIMEOUT = (10, 60)    # for migration status checks
+
+
 def verify_bank_exists(course_id: int, bank_name: str, api_url: str, api_key: str) -> Optional[int]:
     """Check if a question bank exists. Returns bank ID if found."""
     url = f"{api_url}/api/v1/courses/{course_id}/question_banks"
     headers = {"Authorization": f"Bearer {api_key}"}
     
     try:
-        resp = requests.get(url, headers=headers)
+        resp = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT)
         if resp.status_code == 200:
             banks = resp.json()
             for bank in banks:
                 title = bank.get("title") or bank.get("name", "")
                 if title == bank_name:
                     return bank.get("id")
+    except requests.exceptions.Timeout:
+        print(f"[bank:warn] Timeout checking for existing bank")
     except Exception:
         pass
     
@@ -720,7 +793,11 @@ def upload_bank_to_canvas(
     }
     
     print(f"[bank] Initiating content migration...")
-    resp = requests.post(migration_url, headers=headers, data=init_data)
+    try:
+        resp = requests.post(migration_url, headers=headers, data=init_data, timeout=REQUEST_TIMEOUT)
+    except requests.exceptions.Timeout:
+        print(f"[bank:error] Timeout initiating migration")
+        return False
     
     if resp.status_code not in (200, 201):
         print(f"[bank:error] Failed to initiate migration (HTTP {resp.status_code})")
@@ -741,7 +818,11 @@ def upload_bank_to_canvas(
     print(f"[bank] Uploading QTI package...")
     files = {"file": (f"{bank.bank_name}.zip", package_bytes, "application/zip")}
     
-    upload_resp = requests.post(upload_url, data=upload_params, files=files)
+    try:
+        upload_resp = requests.post(upload_url, data=upload_params, files=files, timeout=UPLOAD_TIMEOUT)
+    except requests.exceptions.Timeout:
+        print(f"[bank:error] Timeout uploading QTI package")
+        return False
     
     if upload_resp.status_code not in (200, 201, 301, 302, 303):
         print(f"[bank:error] Failed to upload file (HTTP {upload_resp.status_code})")
@@ -750,7 +831,10 @@ def upload_bank_to_canvas(
     if upload_resp.status_code in (301, 302, 303):
         confirm_url = upload_resp.headers.get("Location")
         if confirm_url:
-            requests.get(confirm_url, headers=headers)
+            try:
+                requests.get(confirm_url, headers=headers, timeout=REQUEST_TIMEOUT)
+            except requests.exceptions.Timeout:
+                pass  # Not critical
     
     print(f"[bank]   Upload complete")
     
@@ -763,7 +847,10 @@ def upload_bank_to_canvas(
         for attempt in range(30):
             time.sleep(2)
             
-            progress_resp = requests.get(progress_url, headers=headers)
+            try:
+                progress_resp = requests.get(progress_url, headers=headers, timeout=MIGRATION_TIMEOUT)
+            except requests.exceptions.Timeout:
+                continue
             if progress_resp.status_code != 200:
                 continue
             
@@ -787,7 +874,7 @@ def upload_bank_to_canvas(
         
         bank_id = verify_bank_exists(course_id, bank.bank_name, api_url, api_key)
         if bank_id:
-            print(f"[bank] âœ“ Bank '{bank.bank_name}' exists (id={bank_id}) - import succeeded")
+            print(f"[bank] ✓ Bank '{bank.bank_name}' exists (id={bank_id}) - import succeeded")
             return True
         else:
             print(f"[bank:warn] Cannot verify via API, but import likely succeeded")

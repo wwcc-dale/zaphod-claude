@@ -100,22 +100,61 @@ class QuizData:
 # ============================================================================
 
 def load_canvas() -> Tuple[Canvas, str, str]:
-    """Load Canvas API client and return (canvas, api_url, api_key)."""
+    """
+    Load Canvas API client safely.
+    
+    SECURITY: Uses safe parsing instead of exec() to prevent code injection.
+    
+    Returns:
+        (canvas, api_url, api_key) tuple
+    """
+    import stat
+    
+    # Try environment variables first
+    env_key = os.environ.get("CANVAS_API_KEY")
+    env_url = os.environ.get("CANVAS_API_URL")
+    if env_key and env_url:
+        return Canvas(env_url, env_key), env_url.rstrip("/"), env_key
+    
     cred_path = os.environ.get("CANVAS_CREDENTIAL_FILE")
     if not cred_path:
-        raise SystemExit("CANVAS_CREDENTIAL_FILE is not set")
+        raise SystemExit(
+            "Canvas credentials not found. Set CANVAS_API_KEY and CANVAS_API_URL "
+            "environment variables, or set CANVAS_CREDENTIAL_FILE."
+        )
 
     cred_file = Path(cred_path)
     if not cred_file.is_file():
         raise SystemExit(f"CANVAS_CREDENTIAL_FILE does not exist: {cred_file}")
 
-    ns: Dict[str, Any] = {}
-    exec(cred_file.read_text(encoding="utf-8"), ns)
+    # SECURITY: Parse credentials safely without exec()
+    content = cred_file.read_text(encoding="utf-8")
+    api_key = None
+    api_url = None
+    
+    for pattern in [r'API_KEY\s*=\s*["\']([^"\']+)["\']', r'API_KEY\s*=\s*(\S+)']:
+        match = re.search(pattern, content)
+        if match:
+            api_key = match.group(1).strip().strip('"\'')
+            break
+    
+    for pattern in [r'API_URL\s*=\s*["\']([^"\']+)["\']', r'API_URL\s*=\s*(\S+)']:
+        match = re.search(pattern, content)
+        if match:
+            api_url = match.group(1).strip().strip('"\'')
+            break
+    
+    if not api_key or not api_url:
+        raise SystemExit(f"Credentials file must define API_KEY and API_URL: {cred_file}")
+    
+    # Check file permissions
     try:
-        api_key = ns["API_KEY"]
-        api_url = ns["API_URL"]
-    except KeyError as e:
-        raise SystemExit(f"Credentials file must define API_KEY and API_URL. Missing: {e}")
+        mode = os.stat(cred_file).st_mode
+        if mode & (stat.S_IRWXG | stat.S_IRWXO):
+            print(f"[import:SECURITY] Credentials file has insecure permissions: {cred_file}")
+            print(f"[import:SECURITY] Fix with: chmod 600 {cred_file}")
+    except OSError:
+        pass
 
     return Canvas(api_url, api_key), api_url.rstrip("/"), api_key
 

@@ -73,43 +73,102 @@ RUBRIC_ROW_REF_RE = re.compile(r"^\s*\{\{\s*rubric_row:([a-zA-Z0-9_\-]+)\s*\}\}\
 # ---------- Canvas helpers ----------
 
 
+def _parse_credentials_safe(cred_file: Path) -> Tuple[str, str]:
+    """Parse credentials file safely without exec()."""
+    import re
+    content = cred_file.read_text(encoding="utf-8")
+    
+    api_key = None
+    api_url = None
+    
+    for pattern in [r'API_KEY\s*=\s*["\']([^"\']+)["\']', r'API_KEY\s*=\s*(\S+)']:
+        match = re.search(pattern, content)
+        if match:
+            api_key = match.group(1).strip().strip('"\'')
+            break
+    
+    for pattern in [r'API_URL\s*=\s*["\']([^"\']+)["\']', r'API_URL\s*=\s*(\S+)']:
+        match = re.search(pattern, content)
+        if match:
+            api_url = match.group(1).strip().strip('"\'')
+            break
+    
+    return api_key, api_url
+
+
+def _check_cred_permissions(cred_file: Path):
+    """Warn if credential file has insecure permissions."""
+    import stat
+    try:
+        mode = os.stat(cred_file).st_mode
+        if mode & (stat.S_IRWXG | stat.S_IRWXO):
+            print(f"[rubric:SECURITY] Credentials file has insecure permissions: {cred_file}")
+            print(f"[rubric:SECURITY] Fix with: chmod 600 {cred_file}")
+    except OSError:
+        pass
+
+
 def load_canvas() -> Canvas:
+    """
+    Load Canvas API client safely.
+    
+    SECURITY: Uses safe parsing instead of exec() to prevent code injection.
+    """
+    # Try environment variables first
+    env_key = os.environ.get("CANVAS_API_KEY")
+    env_url = os.environ.get("CANVAS_API_URL")
+    if env_key and env_url:
+        return Canvas(env_url, env_key)
+    
     cred_path = os.environ.get("CANVAS_CREDENTIAL_FILE")
     if not cred_path:
-        raise SystemExit("CANVAS_CREDENTIAL_FILE is not set")
+        raise SystemExit(
+            "Canvas credentials not found. Set CANVAS_API_KEY and CANVAS_API_URL "
+            "environment variables, or set CANVAS_CREDENTIAL_FILE."
+        )
 
     cred_file = Path(cred_path)
     if not cred_file.is_file():
         raise SystemExit(f"CANVAS_CREDENTIAL_FILE does not exist: {cred_file}")
 
-    ns: Dict[str, Any] = {}
-    exec(cred_file.read_text(encoding="utf-8"), ns)
-    try:
-        api_key = ns["API_KEY"]
-        api_url = ns["API_URL"]
-    except KeyError as e:
-        raise SystemExit(f"Credentials file must define API_KEY and API_URL. Missing {e!r}")
-
+    # SECURITY: Parse credentials safely without exec()
+    api_key, api_url = _parse_credentials_safe(cred_file)
+    if not api_key or not api_url:
+        raise SystemExit(f"Credentials file must define API_KEY and API_URL: {cred_file}")
+    
+    _check_cred_permissions(cred_file)
     return Canvas(api_url, api_key)
 
 
 def get_api_url_and_key() -> Tuple[str, str]:
+    """
+    Get API URL and key safely.
+    
+    SECURITY: Uses safe parsing instead of exec() to prevent code injection.
+    """
+    # Try environment variables first
+    env_key = os.environ.get("CANVAS_API_KEY")
+    env_url = os.environ.get("CANVAS_API_URL")
+    if env_key and env_url:
+        return env_url.rstrip("/"), env_key
+    
     cred_path = os.environ.get("CANVAS_CREDENTIAL_FILE")
     if not cred_path:
-        raise SystemExit("CANVAS_CREDENTIAL_FILE is not set")
+        raise SystemExit(
+            "Canvas credentials not found. Set CANVAS_API_KEY and CANVAS_API_URL "
+            "environment variables, or set CANVAS_CREDENTIAL_FILE."
+        )
 
     cred_file = Path(cred_path)
     if not cred_file.is_file():
         raise SystemExit(f"CANVAS_CREDENTIAL_FILE does not exist: {cred_file}")
 
-    ns: Dict[str, Any] = {}
-    exec(cred_file.read_text(encoding="utf-8"), ns)
-    try:
-        api_key = ns["API_KEY"]
-        api_url = ns["API_URL"]
-    except KeyError as e:
-        raise SystemExit(f"Credentials file must define API_KEY and API_URL. Missing {e!r}")
-
+    # SECURITY: Parse credentials safely without exec()
+    api_key, api_url = _parse_credentials_safe(cred_file)
+    if not api_key or not api_url:
+        raise SystemExit(f"Credentials file must define API_KEY and API_URL: {cred_file}")
+    
+    _check_cred_permissions(cred_file)
     return api_url.rstrip("/"), api_key
 
 

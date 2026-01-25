@@ -1,0 +1,26 @@
+# Zaphod Runtime Dependencies
+# Install with: pip install -r requirements.txt
+
+# Canvas API client
+canvasapi>=3.0.0
+
+# CLI framework
+click>=8.0.0
+
+# Configuration
+PyYAML>=6.0
+
+# Markdown processing
+python-frontmatter>=1.0.0
+Markdown>=3.4.0
+
+# File watching (for sync --watch)
+watchdog>=3.0.0
+
+# -------------------------------------------
+# Development / Testing Dependencies
+# -------------------------------------------
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-mock>=3.11.1
+pytest-timeout>=2.1.0
