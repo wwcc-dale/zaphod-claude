@@ -11,17 +11,17 @@ Syncs quiz folders (*.quiz/) to Canvas as first-class content items.
 Quiz folders live alongside pages and assignments in the content directory:
 
     pages/                              # (or content/)
-    ├── 01-Intro.module/                # Module folder (NEW pattern)
-    │   ├── 01-welcome.page/
-    │   │   └── index.md
-    │   ├── 02-homework.assignment/
-    │   │   └── index.md
-    │   └── 03-pretest.quiz/            # Quiz as first-class citizen
-    │       └── index.md
-    │
+    â”œâ”€â”€ 01-Intro.module/                # Module folder (NEW pattern)
+    â”‚   â”œâ”€â”€ 01-welcome.page/
+    â”‚   â”‚   â””â”€â”€ index.md
+    â”‚   â”œâ”€â”€ 02-homework.assignment/
+    â”‚   â”‚   â””â”€â”€ index.md
+    â”‚   â””â”€â”€ 03-pretest.quiz/            # Quiz as first-class citizen
+    â”‚       â””â”€â”€ index.md
+    â”‚
     quiz-banks/                         # Source pools (not deployed directly)
-    ├── chapter1.bank.md
-    └── chapter2.bank.md
+    â”œâ”€â”€ chapter1.bank.md
+    â””â”€â”€ chapter2.bank.md
 
 Module folder patterns:
 - NEW: '05-Week 1.module' -> infers module "Week 1" (suffix, strips numeric prefix)
@@ -96,6 +96,9 @@ CONTENT_DIR = COURSE_ROOT / "content"  # Alternative name
 QUIZ_BANKS_DIR = COURSE_ROOT / "quiz-banks"
 METADATA_DIR = COURSE_ROOT / "_course_metadata"
 QUIZ_CACHE_FILE = METADATA_DIR / "quiz_cache.json"
+
+# SECURITY: Request timeout constants (connect, read) in seconds
+REQUEST_TIMEOUT = (10, 30)
 
 
 # ============================================================================
@@ -709,7 +712,7 @@ def get_question_banks(course_id: int, api_url: str, api_key: str) -> Dict[str, 
     api_failed = False
     
     try:
-        resp = requests.get(url, headers=headers, params={"per_page": 100}, timeout=10)
+        resp = requests.get(url, headers=headers, params={"per_page": 100}, timeout=REQUEST_TIMEOUT)
         
         if resp.status_code == 200:
             data = resp.json()
@@ -760,7 +763,7 @@ def delete_quiz_questions(quiz, api_url: str, api_key: str, course_id: int):
     # Delete question groups FIRST (before questions)
     groups_url = f"{api_url}/api/v1/courses/{course_id}/quizzes/{quiz.id}/groups"
     try:
-        resp = requests.get(groups_url, headers=headers)
+        resp = requests.get(groups_url, headers=headers, timeout=REQUEST_TIMEOUT)
         if resp.status_code == 200:
             groups = resp.json()
             if groups:
@@ -769,7 +772,7 @@ def delete_quiz_questions(quiz, api_url: str, api_key: str, course_id: int):
                 g_id = g.get("id")
                 if g_id:
                     del_url = f"{groups_url}/{g_id}"
-                    del_resp = requests.delete(del_url, headers=headers)
+                    del_resp = requests.delete(del_url, headers=headers, timeout=REQUEST_TIMEOUT)
                     if del_resp.status_code not in (200, 204):
                         print(f"[quiz:warn] Failed to delete group {g_id}: HTTP {del_resp.status_code}")
     except Exception as e:
@@ -778,7 +781,7 @@ def delete_quiz_questions(quiz, api_url: str, api_key: str, course_id: int):
     # Then delete questions
     questions_url = f"{api_url}/api/v1/courses/{course_id}/quizzes/{quiz.id}/questions"
     try:
-        resp = requests.get(questions_url, headers=headers, params={"per_page": 100})
+        resp = requests.get(questions_url, headers=headers, params={"per_page": 100}, timeout=REQUEST_TIMEOUT)
         if resp.status_code == 200:
             questions = resp.json()
             if questions:
@@ -787,7 +790,7 @@ def delete_quiz_questions(quiz, api_url: str, api_key: str, course_id: int):
                 q_id = q.get("id")
                 if q_id:
                     del_url = f"{questions_url}/{q_id}"
-                    requests.delete(del_url, headers=headers)
+                    requests.delete(del_url, headers=headers, timeout=REQUEST_TIMEOUT)
     except Exception as e:
         print(f"[quiz:warn] Error deleting questions: {e}")
 
@@ -964,7 +967,7 @@ def create_canvas_quiz(
                 }]
             }
             
-            resp = requests.post(groups_url, headers=headers, json=group_payload)
+            resp = requests.post(groups_url, headers=headers, json=group_payload, timeout=REQUEST_TIMEOUT)
             if resp.status_code in (200, 201):
                 print(f"[quiz:group] Added group: pick {group.pick} from '{group_name}' (bank_id={resolved_bank_id}) @ {group.points_per_question} pts each")
             else:

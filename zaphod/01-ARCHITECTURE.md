@@ -1,448 +1,410 @@
 # Zaphod Architecture
 
+> Last updated: January 2026
+
 ## What Zaphod Does
 
 Zaphod is a **local-first course authoring workspace** that makes Canvas LMS course management faster, safer, and more reusable than editing directly in the browser.
 
-**Core Concept:** Plain-text files on disk are the single source of truth → Zaphod scripts sync them to Canvas.
+**Core Concept:** Plain-text files on disk are the single source of truth → Zaphod syncs them to Canvas.
 
-## Key Design Philosophy
+---
 
-### File-Based Source of Truth
-- All content (pages, assignments, quizzes, rubrics, outcomes) lives in plain text
-- Version control friendly (Git)
-- Multiple Canvas shells can be driven from one repository
-- Portability: content not locked in Canvas
+## System Overview
 
-### Why This Matters
-- **Collaboration:** Git-based version control shows what changed, when, who
-- **Reuse:** Copy files/folders instead of rebuilding in Canvas UI
-- **Consistency:** Course-wide changes applied everywhere via variables/includes
-- **Safety:** Test in sandbox first, then publish to live
-- **Longevity:** Plain text survives LMS migrations
+### Directory Structure
 
-## System Architecture
-
-### File Structure
 ```
 course/
-├── pages/                      # Content items
-|   ├── *.page/                # Canvas Pages
-|   ├── *.assignment/          # Canvas Assignments (with optional rubric.yaml)
-|   ├── *.link/                # External links
-|   └── *.file/                # File items
-├── assets/                     # Shared media (images, PDFs, videos)
-├── quiz-banks/                 # *.quiz.txt (NYIT-style plain text)
-├── outcomes/                   # outcomes.yaml (course learning outcomes)
-├── modules/                    # module_order.yaml (module structure)
-├── rubrics/                    # Shared rubrics and reusable rows
-|   ├── *.yaml                 # Full shared rubrics
-|   └── rows/*.yaml            # Reusable criterion rows
-├── _course_metadata/           # Generated state/config
-|   ├── defaults.json          # course_id, defaults
-|   ├── upload_cache.json      # Canvas file upload cache
-|   └── watch_state.json       # Incremental sync state
-└── zaphod/                     # Python scripts (the engine)
+├── zaphod.yaml                 # Course configuration (course_id, settings)
+├── pages/                      # All content items
+│   ├── 01-Intro.module/        # Module folder (NEW: .module suffix)
+│   │   ├── 01-welcome.page/    # Canvas Page
+│   │   │   └── index.md
+│   │   ├── 02-homework.assignment/  # Canvas Assignment
+│   │   │   ├── index.md
+│   │   │   └── rubric.yaml     # Optional rubric
+│   │   └── 03-quiz.quiz/       # Canvas Quiz (NEW)
+│   │       └── index.md
+│   ├── module-Legacy.../       # LEGACY: module- prefix still supported
+│   ├── resources.link/         # External link
+│   └── handout.file/           # File download
+├── quiz-banks/                 # Question bank sources
+│   ├── chapter1.bank.md        # NEW: .bank.md format
+│   └── legacy.quiz.txt         # LEGACY: .quiz.txt still supported
+├── assets/                     # Shared media (images, videos, PDFs)
+│   └── subfolders/supported/
+├── outcomes/                   # Learning outcomes
+│   └── outcomes.yaml
+├── modules/                    # Module ordering
+│   └── module_order.yaml       # Optional explicit ordering
+├── rubrics/                    # Shared rubrics
+│   ├── shared_rubric.yaml
+│   └── rows/                   # Reusable criteria rows
+│       └── writing_clarity.yaml
+├── includes/                   # Shared content snippets
+│   └── late_policy.md
+└── _course_metadata/           # Generated state (gitignore this)
+    ├── defaults.json           # Legacy course_id storage
+    ├── upload_cache.json       # Canvas file ID cache
+    ├── bank_cache.json         # Question bank hash cache
+    ├── quiz_cache.json         # Quiz hash cache
+    └── watch_state.json        # Incremental sync state
 ```
 
-### Content Authoring Model
+### Content Types
 
-**Each content item = One folder with `index.md`**
-```markdown
+| Extension | Canvas Type | Description |
+|-----------|-------------|-------------|
+| `.page/` | Page | Informational content |
+| `.assignment/` | Assignment | Gradable submissions |
+| `.quiz/` | Quiz | Classic quizzes (NEW) |
+| `.link/` | External URL | Link to external site |
+| `.file/` | File | Downloadable file |
+| `.bank.md` | Question Bank | Pool of questions for quizzes |
+
+### Module Organization
+
+**NEW Pattern (recommended):** `.module` suffix
+```
+pages/
+├── 01-Week 1.module/          # → Module "Week 1" (position 1)
+├── 02-Week 2.module/          # → Module "Week 2" (position 2)
+└── 10-Final.module/           # → Module "Final" (position 3)
+```
+
+**LEGACY Pattern (still supported):** `module-` prefix
+```
+pages/
+└── module-Week 1/             # → Module "Week 1"
+```
+
+**Module order inference:**
+1. Explicit `modules/module_order.yaml` (highest priority)
+2. Directory prefixes (numeric sort from `.module` folders)
+3. Content order within modules from folder prefixes (01-, 02-, etc.)
+
 ---
-# Frontmatter: YAML metadata
-name: "Page Title"
-type: "page"
-modules: ["Module 1"]
-published: true
----
-
-# Body: Markdown content
-Content goes here with {{var:variables}} and {{include:snippets}}
-```
-
-**Key Pattern:** Frontmatter (settings) + Body (content) in single file
-
-### Templating System
-
-**Variables:** `{{var:key}}` - replaced with frontmatter values
-```markdown
-instructor_name: "Ada Lovelace"
----
-Contact {{var:instructor_name}} for help.
-```
-
-**Includes:** `{{include:name}}` - shared content blocks
-```markdown
-{{include:late-work-policy}}  # Inserts pages/includes/late-work-policy.md
-```
-
-**Search precedence:**
-1. `pages/includes/name.md` (course-specific)
-2. `includes/name.md` (course-level)
-3. `_all_courses/includes/name.md` (shared across courses)
-
-### Media Handling
-
-**Video Embedding:** `{{video:filename.mp4}}`
-- Looks in `assets/` or content folder
-- Uploads to Canvas (with caching)
-- Converts to Canvas media_attachments_iframe
-
-**Other Media:** Standard markdown `![](path)` or `[link](path)`
-- Uploads to Canvas
-- Caches file IDs to avoid re-upload
-- Updates links in published content
 
 ## Processing Pipeline
 
-### 1. `frontmatter_to_meta.py`
-**Purpose:** Parse index.md → generate work files
+### Unified CLI Entry Point
 
-**What it does:**
-- Parses YAML frontmatter from `index.md`
-- Applies `{{var:...}}` interpolation
-- Expands `{{include:...}}` blocks (recursively)
-- Writes `meta.json` (metadata) + `source.md` (processed body)
-
-**Why:** Separates concerns - metadata vs content
-
-### 2. `publish_all.py`
-**Purpose:** Sync content to Canvas
-
-**What it does:**
-- Reads `meta.json` + `source.md`
-- Replaces `{{video:...}}` with Canvas iframe markup
-- Creates/updates Canvas Pages, Assignments, Files, Links
-- Uploads media files (with caching)
-- `--assets-only` mode for bulk asset upload
-
-**Dependencies:** Uses `markdown2canvas` (being phased out) and `canvasapi`
-
-### 3. `sync_modules.py`
-**Purpose:** Organize content into Canvas modules
-
-**What it does:**
-- Reads `modules` list from each `meta.json`
-- Creates modules if missing
-- Adds items to modules (avoids duplicates)
-- Applies `module_order.yaml` for sequencing
-- Respects `indent` for visual grouping
-
-### 4. `sync_clo_via_csv.py`
-**Purpose:** Import course learning outcomes
-
-**What it does:**
-- Reads `outcomes/outcomes.yaml`
-- Generates Canvas Outcomes CSV format
-- Imports via `Course.import_outcome()` API
-
-**Note:** Uses Canvas CSV import, not outcome-by-outcome API
-
-### 5. `sync_rubrics.py`
-**Purpose:** Create/update Canvas rubrics
-
-**What it does:**
-- Finds `rubric.yaml` in `.assignment` folders
-- Supports `use_rubric: name` to reference shared rubrics
-- Expands `{{rubric_row:name}}` from `rubrics/rows/`
-- POSTs to `/api/v1/courses/:course_id/rubrics`
-- Associates with assignment + marks for grading
-
-**Rubric Architecture:**
-- Per-assignment: `pages/foo.assignment/rubric.yaml`
-- Shared rubrics: `rubrics/essay_rubric.yaml`
-- Reusable rows: `rubrics/rows/writing_clarity.yaml`
-
-### 6. `sync_quiz_banks.py`
-**Purpose:** Convert text quizzes to Canvas Classic quizzes
-
-**What it does:**
-- Reads `quiz-banks/*.quiz.txt`
-- Parses YAML frontmatter (quiz settings)
-- Parses NYIT-style question body
-- Creates Classic Quiz via `course.create_quiz()`
-- Adds questions via `quiz.create_question()`
-
-**Question Types Supported:**
-- Multiple choice (`*b)` marks correct)
-- Multiple answers (`[*]` marks correct)
-- True/False (`*a) True`)
-- Short answer (`* answer`)
-- Essay (`####`)
-- File upload (`^^^^`)
-
-### 7. `prune_canvas_content.py`
-**Purpose:** Remove orphaned Canvas content
-
-**What it does:**
-- **Content pruning:** Deletes Canvas pages/assignments not in local files
-- **Module-item pruning:** Removes module items not in `modules` lists
-- **Empty module pruning:** Deletes empty modules (except those in `module_order.yaml`)
-- **Work-file cleanup:** Removes generated files (`source.md`, etc.)
-
-**Controlled by:**
-- `ZAPHOD_PRUNE_APPLY` (default true)
-- `ZAPHOD_PRUNE_ASSIGNMENTS` (default true)
-- `--dry-run` flag for preview
-
-### 8. `prune_quizzes.py`
-**Purpose:** Clean up quiz content
-
-**What it does:**
-- Deletes Classic quizzes with zero questions
-- Deletes question banks not matching `*.quiz.txt` files
-
-### 9. `watch_and_publish.py`
-**Purpose:** Auto-run pipeline on file changes
-
-**What it does:**
-- Monitors for changes to:
-  - `pages/**/index.md`
-  - `outcomes/outcomes.yaml`
-  - `modules/module_order.yaml`
-  - `quiz-banks/*.quiz.txt`
-  - `rubric.{yaml,yml,json}`
-- Debounces changes (2 second window)
-- Exports `ZAPHOD_CHANGED_FILES` env var
-- Runs full pipeline
-- Maintains `_course_metadata/watch_state.json`
-
-**State Tracking:**
-- `last_run_ts` - timestamp of last run
-- `run_count` - total runs
-- `last_run_datetime` - ISO timestamp
-
-### 10. `export_cartridge.py`
-**Purpose:** Export course to IMS Common Cartridge format
-
-**What it does:**
-- Creates a complete `.imscc` package for LMS portability
-- Generates `imsmanifest.xml` with full course structure
-- Converts pages to HTML web content
-- Converts assignments to CC assignment XML with rubrics
-- Converts quizzes to QTI 1.2 assessment format
-- Includes learning outcomes
-- Preserves module structure in organization
-- Bundles all media assets
-
-**Output Structure:**
-```
-course_export.imscc (ZIP file)
-├── imsmanifest.xml           # Course manifest with organization
-├── web_resources/            # Content items
-│   ├── <item_id>/
-│   │   ├── content.html      # Page/assignment HTML
-│   │   ├── assignment.xml    # Assignment metadata (if applicable)
-│   │   └── rubric.xml        # Rubric (if applicable)
-│   └── assets/               # Media files
-└── assessments/              # Quizzes
-    └── <quiz_id>/
-        └── assessment.xml    # QTI 1.2 format
+```bash
+zaphod sync [--watch] [--dry-run] [--no-prune]
+zaphod validate
+zaphod prune [--dry-run]
+zaphod list [--type TYPE]
+zaphod new --type TYPE --name NAME
+zaphod info
+zaphod export [--output FILE]
 ```
 
-**Compatible with:**
-- Canvas LMS
-- Moodle
-- Blackboard
-- Brightspace (D2L)
-- Sakai
-- Any CC 1.3 compliant LMS
+### Pipeline Steps (in order)
 
-## Incremental Processing
+| Step | Script | Purpose |
+|------|--------|---------|
+| 1 | `frontmatter_to_meta.py` | Parse index.md → meta.json + source.md |
+| 2 | `publish_all.py` | Create/update pages, assignments, files, links |
+| 3 | `sync_banks.py` | Import question banks (QTI migration) |
+| 4 | `sync_quizzes.py` | Create/update quiz folders |
+| 5 | `sync_modules.py` | Organize content into modules |
+| 6 | `sync_clo_via_csv.py` | Import learning outcomes |
+| 7 | `sync_rubrics.py` | Create/update rubrics |
+| 8 | `prune_canvas_content.py` | Remove orphaned content, clean work files |
 
-**Key Optimization:** Only process changed files
+### 1. frontmatter_to_meta.py
 
-**How it works:**
-1. `watch_and_publish.py` detects changes via watchdog
-2. Computes changed files since `last_run_ts`
-3. Exports `ZAPHOD_CHANGED_FILES` (newline-separated paths)
-4. Child scripts check env var:
-   - If set: only process affected folders
-   - If unset: full scan (backward compatible)
+**Input:** `pages/**/index.md` with YAML frontmatter
+**Output:** `meta.json` (metadata) + `source.md` (processed body)
+
+**Features:**
+- Parses YAML frontmatter
+- Expands `{{var:key}}` variables
+- Expands `{{include:name}}` blocks (recursive)
+- Infers type from folder extension
+- Infers module from `.module` directory structure
+
+### 2. publish_all.py
+
+**Input:** `meta.json` + `source.md`
+**Output:** Canvas pages, assignments, files, links
+
+**Features:**
+- Replaces `{{video:filename}}` with Canvas iframe
+- Uploads local assets (with content-hash caching)
+- Supports `--dry-run` for preview
+- Supports `--assets-only` for bulk asset upload
+
+### 3. sync_banks.py
+
+**Input:** `quiz-banks/*.bank.md` or `*.quiz.txt`
+**Output:** Canvas question banks via QTI migration
+
+**Features:**
+- Content-hash caching (avoids re-upload)
+- Supports `bank_name` frontmatter override
+- Tracks migration status with timeout handling
+- Warns about duplicates on `--force`
+
+### 4. sync_quizzes.py
+
+**Input:** `pages/**/*.quiz/index.md`
+**Output:** Canvas Classic quizzes
+
+**Features:**
+- Quiz as first-class content (alongside pages/assignments)
+- References question banks by `bank_id` or bank name
+- Supports inline questions
+- Content-hash caching
+- Module inference from directory structure
+
+### 5. sync_modules.py
+
+**Input:** `meta.json` files with `modules` lists
+**Output:** Canvas modules with ordered items
+
+**Features:**
+- Creates modules on demand
+- Orders items by folder prefix (01-, 02-)
+- Supports `position` frontmatter override
+- Applies `module_order.yaml` sequencing
+
+### 6. sync_clo_via_csv.py
+
+**Input:** `outcomes/outcomes.yaml`
+**Output:** Canvas outcomes via CSV import
+
+### 7. sync_rubrics.py
+
+**Input:** `rubric.yaml` in `.assignment` folders
+**Output:** Canvas rubrics attached to assignments
+
+**Features:**
+- Supports `use_rubric: name` for shared rubrics
+- Supports `{{rubric_row:name}}` expansion
+- Creates rubric and associates with assignment
+
+### 8. prune_canvas_content.py
+
+**Purpose:** Clean up orphaned content
+
+**What it prunes:**
+- Canvas pages not in local `.page` folders
+- Assignments not in local `.assignment` folders (optional)
+- Quizzes not in local `.quiz` folders
+- Module items not in `modules` lists
+- Empty modules (except those in config)
+- Work files: `meta.json`, `source.md`, etc.
+
+---
+
+## Quiz Architecture
+
+### Two-Layer Model
+
+```
+┌─────────────────────────────────────────────────────┐
+│  quiz-banks/*.bank.md                               │
+│  (Question Pools - Canvas Question Banks)           │
+│  ├── chapter1.bank.md  →  "Chapter 1 Questions"    │
+│  └── chapter2.bank.md  →  "Chapter 2 Questions"    │
+└─────────────────────────────────────────────────────┘
+                       ▼
+        ┌─────────────────────────────────────────────┐
+        │  pages/**/*.quiz/                           │
+        │  (Deployable Quizzes - Canvas Quizzes)      │
+        │  ├── week1.quiz/index.md  →  "Week 1 Quiz" │
+        │  │     question_groups:                     │
+        │  │       - bank_id: 12345                   │
+        │  │         pick: 5                          │
+        │  └── midterm.quiz/index.md → "Midterm"     │
+        │          (inline questions)                 │
+        └─────────────────────────────────────────────┘
+```
+
+### Bank File Format (.bank.md)
+
+```markdown
+---
+bank_name: "Chapter 1 Questions"
+---
+
+1. What is 2+2?
+a) 3
+*b) 4
+c) 5
+
+2. Select all prime numbers:
+[*] 2
+[*] 3
+[ ] 4
+[*] 5
+```
+
+### Quiz Folder Format (.quiz/)
+
+```markdown
+---
+name: "Week 1 Quiz"
+quiz_type: assignment
+time_limit: 30
+shuffle_answers: true
+question_groups:
+  - bank_id: 12345
+    pick: 5
+    points_per_question: 2
+---
+
+Instructions for the quiz go here.
+```
+
+---
+
+## Templating System
+
+### Variables
+
+```yaml
+# In frontmatter:
+instructor: "Dr. Smith"
+---
+Contact {{var:instructor}} for help.
+```
+
+**Resolution order:**
+1. Same-file frontmatter
+2. Course `variables.yaml`
+3. Shared `_all_courses/variables.yaml`
+
+### Includes
+
+```markdown
+{{include:late_policy}}
+```
+
+**Search order:**
+1. `pages/includes/late_policy.md`
+2. `includes/late_policy.md`
+3. `_all_courses/includes/late_policy.md`
+
+### Video Embedding
+
+```markdown
+{{video:lecture1.mp4}}
+```
+
+Converted to Canvas media iframe after upload.
+
+---
+
+## Caching System
+
+### Content-Hash Caching
+
+All upload operations use content hashing to avoid redundant uploads:
+
+```
+Cache key: {course_id}:{filename}:{content_hash}
+```
 
 **Benefits:**
-- Large courses: 5+ minute full sync → 10-30 second incremental
-- Better dev experience with watch mode
+- Same filename, different content → re-upload
+- Same content, same name → skip
+- Works across courses
 
-**Implementation:**
-```python
-def get_changed_files() -> list[Path]:
-    raw = os.environ.get("ZAPHOD_CHANGED_FILES", "").strip()
-    if not raw:
-        return []  # Full mode
-    return [Path(p) for p in raw.splitlines()]
+**Cache files:**
+- `upload_cache.json` - Media/asset uploads
+- `bank_cache.json` - Question bank imports
+- `quiz_cache.json` - Quiz syncs
 
-# In each script:
-changed = get_changed_files()
-if changed:
-    dirs = iter_changed_content_dirs(changed)  # Incremental
-else:
-    dirs = iter_all_content_dirs()  # Full scan
-```
+---
 
 ## Configuration
 
+### zaphod.yaml (recommended)
+
+```yaml
+course_id: 12345
+# Optional overrides
+api_url: https://canvas.institution.edu
+```
+
 ### Environment Variables
+
 ```bash
-CANVAS_CREDENTIAL_FILE=$HOME/.canvas/credentials.txt
-COURSE_ID=123456
-ZAPHOD_PRUNE_APPLY=true
-ZAPHOD_PRUNE_ASSIGNMENTS=true
+COURSE_ID=12345
+CANVAS_API_KEY=token
+CANVAS_API_URL=https://canvas.institution.edu
+CANVAS_CREDENTIAL_FILE=~/.canvas/credentials.txt
 ```
 
 ### Credentials File
+
 ```python
 # ~/.canvas/credentials.txt
-API_KEY = "your_canvas_token"
-API_URL = "https://canvas.yourinstitution.edu"
+API_KEY = "your_token"
+API_URL = "https://canvas.institution.edu"
 ```
 
-### Course Defaults
-```json
-// _course_metadata/defaults.json
-{
-  "course_id": 123456
-}
+**Priority:** Environment variables → zaphod.yaml → defaults.json → credentials file
+
+---
+
+## Security Features
+
+- **Safe credential parsing** (no `exec()`)
+- **Environment variable support** for CI/CD
+- **Path traversal protection** in CLI
+- **File permission warnings** for credentials
+- **Request timeouts** on all API calls
+- **Content validation** via YAML safe_load
+
+---
+
+## Export Capability
+
+### Common Cartridge Export
+
+```bash
+zaphod export --output course.imscc
 ```
 
-**Resolution Order:** `COURSE_ID` env var → `defaults.json` → error
+**Exports:**
+- Pages as HTML
+- Assignments with rubrics
+- Quizzes as QTI 1.2
+- Learning outcomes
+- Module structure
+- Media assets
 
-## Technology Stack
+**Compatible with:** Canvas, Moodle, Blackboard, Brightspace, Sakai
 
-### Core Dependencies
-- **canvasapi** - Canvas LMS API wrapper
-- **markdown2canvas** - Markdown → Canvas HTML (being phased out)
-- **python-frontmatter** - YAML frontmatter parsing
-- **watchdog** - File system monitoring
-- **PyYAML** - YAML parsing for configs
+---
 
-### Recent Additions (2026)
-- **click** - CLI framework
-- **pytest** - Testing
-- **FastAPI** - Web UI backend (in progress)
+## Incremental Processing
 
-## Critical Design Decisions
-
-### Why Script Pipeline vs Monolithic App?
-**Decision:** Multiple independent Python scripts
-
-**Rationale:**
-- Each script does one thing (Unix philosophy)
-- Easy to understand and debug
-- Can run steps individually
-- No server management
-- Good for single-user local workflows
-
-**Trade-offs:**
-- State shared via files, not memory
-- Adding web UI requires API layer
-- No concurrent user support
-
-### Why Frontmatter + Markdown?
-**Decision:** YAML frontmatter in markdown files
-
-**Rationale:**
-- Single file = single source of truth
-- Common pattern (Jekyll, Hugo)
-- Easy to edit (one file, not two)
-- Git-friendly
-
-**Trade-offs:**
-- Harder to query metadata without parsing
-- YAML errors can break entire file
-
-### Why Incremental Mode?
-**Decision:** Track changed files, only process those
-
-**Rationale:**
-- Courses can have 100+ pages
-- Full sync takes 5+ minutes
-- Incremental sync takes 10-30 seconds
-- Better dev experience
-
-**Trade-offs:**
-- More complex change detection
-- State file management
-- Edge cases with file moves/renames
-
-### Why NYIT Quiz Format?
-**Decision:** Custom plain-text quiz format
-
-**Rationale:**
-- Faster than Canvas quiz editor
-- Easy to version/review/duplicate
-- Borrowed proven format from NYIT tool
-
-**Trade-offs:**
-- Custom parsing logic needed
-- Limited to Classic Quizzes
-- Learning curve for format
-
-## Known Limitations
-
-### Critical
-- **No conflict resolution:** Last-write-wins when Canvas is newer
-- **Cache invalidation:** Upload cache can get stale (manual delete needed)
-- **No undo for prune:** Deletions are immediate
-
-### Important
-- **Module reordering:** Sometimes fails silently
-- **Video cache:** Filename-based (doesn't detect content changes)
-- **Single course:** One course at a time
-- **Classic quizzes only:** No New Quizzes support
-
-### By Design
-- **Local-only:** No cloud sync
-- **Single-user:** No concurrent editing support
-- **One shell per run:** Must specify `COURSE_ID` for multi-shell
-
-## Recent Evolution (2026)
-
-### What We're Adding
-1. **Unified CLI** (`cli.py`) - Better DX
-2. **Testing** (`tests/`) - Catch regressions
-3. **Better errors** (`errors.py`) - Actionable messages
-4. **Web UI** (in progress) - Visual management
-5. **Validation** (planned) - Pre-sync checks
-
-### What's Unchanged
-- Core pipeline architecture
-- File structure
-- Frontmatter format
-- All existing scripts work as before
+When `ZAPHOD_CHANGED_FILES` is set:
+- Only changed folders are processed
+- Watch mode sets this automatically
+- Full sync: 5+ minutes → Incremental: 10-30 seconds
 
 ---
 
 ## Data Flow Example
+
 ```
-User edits → pages/essay-1.assignment/index.md
-              ↓
-Watch detects change → exports ZAPHOD_CHANGED_FILES
-              ↓
-frontmatter_to_meta.py → essay-1.assignment/meta.json + source.md
-              ↓
+User edits: pages/01-Intro.module/essay.assignment/index.md
+     ↓
+frontmatter_to_meta.py → meta.json + source.md
+     ↓
 publish_all.py → Creates/updates Canvas Assignment
-              ↓
-sync_modules.py → Adds to "Module 2" in Canvas
-              ↓
-sync_rubrics.py → Creates rubric from rubric.yaml, attaches to assignment
-              ↓
-Result: Canvas reflects latest local state
+     ↓
+sync_rubrics.py → Attaches rubric from rubric.yaml
+     ↓
+sync_modules.py → Adds to "Intro" module
+     ↓
+prune_canvas_content.py → Removes orphaned items, cleans work files
+     ↓
+Canvas reflects latest local state
 ```
-
-## Success Metrics
-
-**What makes Zaphod work well:**
-- Course updates in seconds (incremental) vs minutes (Canvas UI)
-- Content survives across terms/shells (just copy files)
-- Changes visible in Git (who changed what, when)
-- Test in sandbox, publish to live (same files)
-- Variables/includes keep wording consistent
-
-**What users value most:**
-1. Speed (watch mode feels instant)
-2. Reusability (copy course = copy folder)
-3. Safety (Git history, sandbox testing)
-4. Consistency (variables, includes)
-5. Plain text (future-proof, portable)

@@ -2,16 +2,54 @@
 """
 Zaphod CLI - Unified interface for course management
 
-Usage:
-    zaphod sync [--watch] [--course-id ID] [--dry-run] [--no-prune]
-    zaphod validate [--verbose]
-    zaphod prune [--dry-run] [--assignments]
-    zaphod list [--type TYPE]
-    zaphod new --type TYPE --name NAME
-    zaphod info
-    zaphod ui [--port PORT]
+COMMANDS:
+    Course Setup:
+        zaphod init [--course-id ID]              Initialize new course structure
+        zaphod info                               Show course information and status
+        zaphod validate [--verbose]               Validate course content
 
-This CLI wraps existing Zaphod scripts without modifying them.
+    Content Management:
+        zaphod list [--type TYPE] [--module M]    List course content
+        zaphod new --type TYPE --name NAME        Create new content item
+
+    Syncing:
+        zaphod sync [--watch] [--dry-run]         Sync local content to Canvas
+        zaphod prune [--dry-run] [--assignments]  Remove orphaned Canvas content
+
+    Media Management:
+        zaphod manifest                           Build media manifest for large files
+        zaphod hydrate --source PATH              Download missing media files
+
+    Export:
+        zaphod export [--output FILE]             Export course to Common Cartridge
+
+    Other:
+        zaphod version                            Show version information
+        zaphod ui [--port PORT]                   Launch web UI (experimental)
+
+EXAMPLES:
+    # Initialize a new course
+    zaphod init --course-id 12345
+
+    # Sync with auto-watch mode
+    zaphod sync --watch
+
+    # Preview what sync would do
+    zaphod sync --dry-run
+
+    # List all quizzes
+    zaphod list --type quiz
+
+    # Create a new assignment
+    zaphod new --type assignment --name "Essay 1" --module "Week 2"
+
+    # Validate before syncing
+    zaphod validate
+
+    # Export for another LMS
+    zaphod export --output my-course.imscc
+
+For more information, see the user guide in docs/user-guide/
 """
 
 import click
@@ -662,6 +700,166 @@ def info(ctx: ZaphodContext):
             click.echo(check)
     else:
         click.echo("[v] All checks passed")
+
+
+# ============================================================================
+# Init / Scaffold
+# ============================================================================
+
+@cli.command()
+@click.option('--course-id', type=int, help='Canvas course ID')
+@click.option('--force', is_flag=True, help='Overwrite existing template files')
+@click.pass_obj
+def init(ctx: ZaphodContext, course_id: Optional[int], force: bool):
+    """
+    Initialize a new Zaphod course structure
+    
+    Creates the standard directory structure and sample content:
+    - pages/           Content folders (.page, .assignment, .quiz, etc.)
+    - assets/          Shared media files (images, videos, PDFs)
+    - quiz-banks/      Question bank files (.bank.md)
+    - modules/         Module ordering configuration
+    - outcomes/        Learning outcomes definitions
+    - rubrics/         Shared rubrics and reusable rows
+    - _course_metadata/ Internal state and cache files
+    
+    Also creates sample content to help you get started.
+    
+    Examples:
+        zaphod init                        # Initialize with prompts
+        zaphod init --course-id 12345      # Set course ID during init
+        zaphod init --force                # Overwrite existing templates
+    """
+    click.echo(f"[*] Initializing Zaphod course in: {ctx.course_root}")
+    
+    # Create zaphod.yaml if course_id provided
+    if course_id:
+        yaml_path = ctx.course_root / "zaphod.yaml"
+        if yaml_path.exists() and not force:
+            click.echo(f"[!] zaphod.yaml already exists (use --force to overwrite)")
+        else:
+            yaml_content = f"""# Zaphod Course Configuration
+course_id: {course_id}
+
+# Optional: Course metadata
+# title: "My Course"
+# term: "Spring 2026"
+"""
+            yaml_path.write_text(yaml_content)
+            click.echo(f"[v] Created zaphod.yaml with course_id: {course_id}")
+    
+    # Run scaffold script
+    args = []
+    if force:
+        args.append("--force")
+    
+    ctx.run_script("scaffold_course.py", args=args if args else None)
+    
+    click.echo()
+    click.echo("[v] Course initialized!")
+    click.echo()
+    click.echo("Next steps:")
+    click.echo("  1. Edit zaphod.yaml to set your course_id (if not set)")
+    click.echo("  2. Edit the sample content in pages/")
+    click.echo("  3. Run: zaphod sync --dry-run")
+    click.echo("  4. Run: zaphod sync")
+
+
+# ============================================================================
+# Media Management
+# ============================================================================
+
+@cli.command()
+@click.pass_obj
+def manifest(ctx: ZaphodContext):
+    """
+    Build media manifest for large files
+    
+    Scans the course for large media files (videos, audio) and creates
+    a manifest at _course_metadata/media_manifest.json. This manifest
+    tracks files that should be excluded from Git but need to be
+    available for syncing.
+    
+    The manifest includes:
+    - File paths relative to course root
+    - SHA256 checksums for verification
+    - File sizes
+    
+    Use this with 'zaphod hydrate' for team workflows where large
+    files are stored on a shared network drive or server.
+    
+    Examples:
+        zaphod manifest                    # Build manifest
+    
+    See also:
+        zaphod hydrate                     # Download files listed in manifest
+    """
+    click.echo(f"[*] Building media manifest for: {ctx.course_root}")
+    click.echo()
+    
+    ctx.run_script("build_media_manifest.py")
+    
+    manifest_path = ctx.metadata_dir / "media_manifest.json"
+    if manifest_path.exists():
+        click.echo()
+        click.echo(f"[v] Manifest saved to: {manifest_path}")
+
+
+@cli.command()
+@click.option('--source', required=True, help='Source path or URL (SMB path, local path, or HTTP URL)')
+@click.option('--verify/--no-verify', default=True, help='Verify checksums after download')
+@click.option('--dry-run', is_flag=True, help='Show what would be downloaded')
+@click.pass_obj
+def hydrate(ctx: ZaphodContext, source: str, verify: bool, dry_run: bool):
+    """
+    Download missing media files from a shared source
+    
+    Reads the media manifest and downloads any missing files from
+    the specified source location. Supports:
+    
+    - Local paths: /mnt/shared/courses/CS101
+    - SMB paths: \\\\server\\courses\\CS101
+    - HTTP URLs: https://media.example.com/courses/CS101
+    
+    Files are verified against checksums in the manifest to ensure
+    integrity.
+    
+    Examples:
+        # From a network share
+        zaphod hydrate --source "\\\\fileserver\\courses\\CS101"
+        
+        # From a local path
+        zaphod hydrate --source /mnt/shared/courses/CS101
+        
+        # From HTTP server
+        zaphod hydrate --source https://media.example.edu/CS101
+        
+        # Preview what would be downloaded
+        zaphod hydrate --source /path/to/source --dry-run
+        
+        # Skip checksum verification (faster)
+        zaphod hydrate --source /path/to/source --no-verify
+    
+    See also:
+        zaphod manifest                    # Build the manifest first
+    """
+    manifest_path = ctx.metadata_dir / "media_manifest.json"
+    if not manifest_path.exists():
+        click.echo("[!] No media manifest found. Run 'zaphod manifest' first.", err=True)
+        sys.exit(1)
+    
+    click.echo(f"[*] Hydrating media from: {source}")
+    if dry_run:
+        click.echo("[*] DRY RUN - no files will be downloaded")
+    click.echo()
+    
+    args = ["--source", source]
+    if not verify:
+        args.append("--no-verify")
+    if dry_run:
+        args.append("--dry-run")
+    
+    ctx.run_script("hydrate_media.py", args=args)
 
 
 # ============================================================================

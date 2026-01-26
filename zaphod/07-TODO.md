@@ -1,36 +1,164 @@
 # To Do List
 
-## Completed
-- [x] **Asset manifest and hydrate** - Large Media files can be ignored by git but compiled to a manifest. Files can be stored in a shared web location from which other users may rehydrate media files. 
-- [x] **Asset subfolder resolution** - Users can organize assets in subdirectories
-  - Auto-discovers assets from any subfolder in `assets/`
-  - Supports explicit paths like `../assets/images/logo.png`
-  - Warns and fails on duplicate filenames (requires explicit path)
-  - Fixed path resolution with `../` relative paths using `.resolve()`
-- [x] **Module inference from directory** - `module-` prefix convention
-  - Directories like `pages/module-Week 1/` auto-assign contents to "Week 1" module
-  - Explicit `modules:` in frontmatter always overrides
-  - Reduces repetitive frontmatter for module-organized courses
-- [x] **Content-hash caching** - All upload functions now use content hash
-  - Cache key format: `{course_id}:{filename}:{content_hash}`
-  - Updated files with same name get re-uploaded (different hash)
-  - Same filename in different locations handled correctly
-  - Applied to: video uploads, local assets, bulk uploads
-- [x] **Initial sync on watch startup** - Full sync runs when watch mode starts
-- [x] **Prune cleanup** - `meta.json` added to auto-cleaned work files
-- [x] **Simplified prune in watch** - Uses script defaults, no extra env vars needed
-- [x] **Unicode cleanup** - Fixed corrupted unicode in all Python files
+> Active development tasks. See `IDEAS.md` for future enhancements under consideration.
 
-## In Progress
-- [ ] **Common Cartridge export** (`export_cartridge.py`) - Exports full course to .imscc format. ***(Produces exports but unsuccessful import)***
-- [ ] **Outcome ratings file** with replacement pattern {{ratings:default}} or would it be better to simply rely on an extension of includes? ***(It's unclear what was intended here)***
+---
 
-## Future Enhancements
-1. Rename `pages/` to `content/` for clarity (contains pages, assignments, links, files)
-2. Add Canvas-specific extensions to CC export (discussion topics, announcements)
-3. Add QTI 2.1 support as alternative to QTI 1.2
-4. Add CC import capability (reverse of export)
-5. Add selective export (--modules flag to export only specific modules)
-6. Add export validation against CC 1.3 schema
-7. Testing infrastructure - pytest tests for core functions
-8. Web UI for non-technical users
+## Completed ✅
+
+### January 2026
+
+- [x] **Quiz ecosystem overhaul**
+  - Two-layer model: banks (*.bank.md) → quizzes (*.quiz/)
+  - Content-hash caching for banks and quizzes
+  - Quiz folders as first-class content (alongside pages/assignments)
+  - Bank name from frontmatter (`bank_name:`)
+
+- [x] **Module inference from directory structure**
+  - NEW: `.module` suffix pattern (`01-Week 1.module/`)
+  - LEGACY: `module-` prefix still supported
+  - Numeric prefix for ordering (strips prefix from module name)
+  - Order inference when no `module_order.yaml`
+
+- [x] **CLI improvements**
+  - `zaphod sync --dry-run` preview mode
+  - `zaphod sync --no-prune` skip cleanup
+  - `zaphod new --type quiz` scaffold support
+  - `zaphod list --type quiz` filter
+  - Fixed `list` command name shadowing Python builtin
+
+- [x] **Prune enhancements**
+  - Quiz awareness (doesn't delete quiz-backed assignments)
+  - `meta.json` added to auto-cleaned work files
+  - Empty module protection for `.module` folders
+
+- [x] **Security hardening**
+  - Replaced all `exec()` credential loading with safe parsing
+  - Environment variable support for credentials
+  - Path traversal protection in CLI
+  - Request timeouts on all API calls
+  - File permission checks for credentials
+
+- [x] **Asset handling**
+  - Subfolder resolution in `assets/`
+  - Content-hash caching for all uploads
+  - `{{video:...}}` placeholder replacement
+
+- [x] **Configuration**
+  - `zaphod.yaml` support for course_id
+  - Priority: env → zaphod.yaml → defaults.json
+
+- [x] **Common Cartridge export** (`export_cartridge.py`)
+  - Exports to IMS CC 1.3 format
+  - Includes pages, assignments, quizzes, outcomes, modules
+
+### Earlier
+
+- [x] Initial sync on watch startup
+- [x] Unicode cleanup in Python files
+- [x] Incremental processing via `ZAPHOD_CHANGED_FILES`
+- [x] Rubric shared rows and `{{rubric_row:...}}`
+
+---
+
+## In Progress 🔄
+
+### Common Cartridge Export Issues
+
+**Problem:** Export produces files but import into Canvas fails.
+
+**Status:** Investigating CC compliance issues
+
+**Tasks:**
+- [ ] Test import into fresh Canvas course
+- [ ] Validate manifest against CC 1.3 schema
+- [ ] Check QTI assessment format
+- [ ] Review Canvas-specific extensions
+
+---
+
+### Documentation Update
+
+**Status:** In progress (this session)
+
+**Tasks:**
+- [x] Update ARCHITECTURE.md with current functionality
+- [x] Create DEPRECATED.md for old scripts
+- [x] Create IDEAS.md for future enhancements
+- [x] Update TODO.md (this file)
+- [ ] Review and update user guide (00-15 files)
+
+---
+
+## Planned 📋
+
+### Testing Infrastructure
+
+**Priority:** High
+**Estimate:** 2-3 days
+
+- [ ] Set up pytest framework
+- [ ] Unit tests for quiz parsing
+- [ ] Unit tests for frontmatter processing
+- [ ] Integration tests with mock Canvas
+- [ ] CI/CD pipeline
+
+---
+
+### Validation Command Enhancement
+
+**Priority:** Medium
+**Estimate:** 1 day
+
+- [ ] Validate bank_id references exist
+- [ ] Validate module names are consistent
+- [ ] Validate asset file existence
+- [ ] Add `--strict` mode
+
+---
+
+### Watch Mode Improvements
+
+**Priority:** Low
+**Estimate:** 1 day
+
+- [ ] Better handling of file renames
+- [ ] Debounce improvements
+- [ ] Status display during sync
+
+---
+
+## Known Issues 🐛
+
+### Module Reordering Inconsistent
+
+**Problem:** Sometimes modules don't reorder correctly.
+**Cause:** Canvas API timing issues.
+**Workaround:** Check Canvas after sync, manually adjust if needed.
+
+### Bank Migration Timeouts
+
+**Problem:** Large banks can timeout during Canvas processing.
+**Mitigation:** Added timeout warning and post-migration verification.
+**Future:** Consider chunking large banks.
+
+### Video Cache Filename-Based
+
+**Problem:** Same filename with different content uses cache.
+**Status:** FIXED - Now uses content-hash caching.
+
+---
+
+## Backlog (Not Scheduled)
+
+See `IDEAS.md` for full list. Key items:
+
+1. Rename `pages/` to `content/`
+2. New Quizzes support (blocked by Canvas API)
+3. CC import capability
+4. Web UI for non-technical users
+5. Multi-course workspaces
+
+---
+
+*Last updated: January 2026*

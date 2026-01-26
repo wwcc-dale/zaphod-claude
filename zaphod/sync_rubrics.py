@@ -69,6 +69,9 @@ RUBRIC_ROWS_DIR = RUBRICS_DIR / "rows"
 # New: placeholder pattern for row includes
 RUBRIC_ROW_REF_RE = re.compile(r"^\s*\{\{\s*rubric_row:([a-zA-Z0-9_\-]+)\s*\}\}\s*$")
 
+# SECURITY: Request timeout constants (connect, read) in seconds
+REQUEST_TIMEOUT = (10, 30)
+
 
 # ---------- Canvas helpers ----------
 
@@ -461,7 +464,7 @@ def create_rubric_via_api(
     url = f"{api_url}/api/v1/courses/{course_id}/rubrics"
     headers = {"Authorization": f"Bearer {api_key}"}
 
-    resp = requests.post(url, headers=headers, data=payload)
+    resp = requests.post(url, headers=headers, data=payload, timeout=REQUEST_TIMEOUT)
 
     if resp.status_code in (200, 201):
         return resp.json()

@@ -65,6 +65,11 @@ QUIZ_BANKS_DIR = COURSE_ROOT / "quiz-banks"
 QTI_NS = "http://www.imsglobal.org/xsd/ims_qtiasiv1p2"
 CC_NS = "http://www.imsglobal.org/xsd/imsccv1p3/imscp_v1p1"
 
+# SECURITY: Request timeout constants (connect, read) in seconds
+REQUEST_TIMEOUT = (10, 30)       # Standard API calls
+UPLOAD_TIMEOUT = (10, 120)       # File uploads (longer)
+MIGRATION_TIMEOUT = (10, 60)     # Migration status checks
+
 
 # ============================================================================
 # Data Classes
@@ -712,7 +717,7 @@ def verify_bank_exists(course_id: int, bank_name: str, api_url: str, api_key: st
     headers = {"Authorization": f"Bearer {api_key}"}
     
     try:
-        resp = requests.get(url, headers=headers)
+        resp = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT)
         if resp.status_code == 200:
             banks = resp.json()
             for bank in banks:
@@ -759,7 +764,7 @@ def upload_qti_to_bank(
     }
     
     print(f"[import] Initiating content migration...")
-    resp = requests.post(migration_url, headers=headers, data=init_data)
+    resp = requests.post(migration_url, headers=headers, data=init_data, timeout=REQUEST_TIMEOUT)
     
     if resp.status_code not in (200, 201):
         print(f"[import:error] Failed to initiate migration (HTTP {resp.status_code})")
@@ -784,7 +789,7 @@ def upload_qti_to_bank(
         "file": (f"{quiz.bank_name}.zip", package_bytes, "application/zip")
     }
     
-    upload_resp = requests.post(upload_url, data=upload_params, files=files)
+    upload_resp = requests.post(upload_url, data=upload_params, files=files, timeout=UPLOAD_TIMEOUT)
     
     if upload_resp.status_code not in (200, 201, 301, 302, 303):
         print(f"[import:error] Failed to upload file (HTTP {upload_resp.status_code})")
@@ -795,7 +800,7 @@ def upload_qti_to_bank(
     if upload_resp.status_code in (301, 302, 303):
         confirm_url = upload_resp.headers.get("Location")
         if confirm_url:
-            confirm_resp = requests.get(confirm_url, headers=headers)
+            confirm_resp = requests.get(confirm_url, headers=headers, timeout=REQUEST_TIMEOUT)
             if confirm_resp.status_code != 200:
                 print(f"[import:error] Failed to confirm upload")
                 return False
@@ -811,7 +816,7 @@ def upload_qti_to_bank(
         for attempt in range(30):  # Max 30 attempts (60 seconds)
             time.sleep(2)
             
-            progress_resp = requests.get(progress_url, headers=headers)
+            progress_resp = requests.get(progress_url, headers=headers, timeout=MIGRATION_TIMEOUT)
             if progress_resp.status_code != 200:
                 continue
             
@@ -822,14 +827,14 @@ def upload_qti_to_bank(
             print(f"[import]   Progress: {completion}% ({workflow_state})")
             
             if workflow_state == "completed":
-                print(f"[import] ✓ Migration completed successfully")
+                print(f"[import] âœ“ Migration completed successfully")
                 print(f"[import]   Questions imported to bank: '{quiz.bank_name}'")
                 return True
             elif workflow_state == "failed":
                 migration_failed = True
                 # Get migration issues for logging
                 issues_url = f"{api_url}/api/v1/courses/{course_id}/content_migrations/{migration_id}/migration_issues"
-                issues_resp = requests.get(issues_url, headers=headers)
+                issues_resp = requests.get(issues_url, headers=headers, timeout=REQUEST_TIMEOUT)
                 if issues_resp.status_code == 200:
                     issues = issues_resp.json()
                     for issue in issues:
@@ -851,7 +856,7 @@ def upload_qti_to_bank(
         
         bank_id = verify_bank_exists(course_id, quiz.bank_name, api_url, api_key)
         if bank_id:
-            print(f"[import] ✓ Bank '{quiz.bank_name}' exists (id={bank_id}) - import succeeded despite reported failure")
+            print(f"[import] âœ“ Bank '{quiz.bank_name}' exists (id={bank_id}) - import succeeded despite reported failure")
             return True
         else:
             # Can't verify via API, but import often still works

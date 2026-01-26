@@ -56,12 +56,15 @@ COURSE_ROOT = Path.cwd()
 PAGES_DIR = COURSE_ROOT / "pages"
 MODULE_ORDER_PATH = COURSE_ROOT / "modules" / "module_order.yaml"
 
+# Auto-generated work files that should be cleaned up
+# These are created by frontmatter_to_meta.py and publish_all.py
 AUTO_WORK_FILES = {
-    "styled_source.md",
+    "meta.json",           # Generated from frontmatter
+    "source.md",           # Generated HTML-ready source  
+    "styled_source.md",    # Legacy styled output
     "extra_styled_source.md",
     "extra_styled_source.html",
     "result.html",
-    "source.md",
 }
 
 

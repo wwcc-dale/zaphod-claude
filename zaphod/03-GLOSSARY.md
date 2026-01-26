@@ -1,6 +1,6 @@
 # Zaphod Glossary
 
-Quick reference for terms, concepts, and jargon used in Zaphod.
+> Quick reference for terms, concepts, and jargon used in Zaphod.
 
 ---
 
@@ -24,6 +24,9 @@ An individual piece of content inside a module (a page, assignment, file, etc.).
 ### Classic Quiz
 The original Canvas quiz system. Zaphod only supports Classic Quizzes (not New Quizzes).
 
+### Question Bank
+Canvas storage for quiz questions that can be reused across quizzes. Zaphod creates these from `.bank.md` files.
+
 ### Outcome
 A learning goal or objective. Canvas can track student performance against outcomes across assignments.
 
@@ -41,9 +44,14 @@ A single instance of a Canvas course (one course ID). One Zaphod course folder c
 The authoritative version of something. In Zaphod, **local files are the source of truth** and Canvas reflects them.
 
 ### Content Folder
-A folder under `pages/` that represents one Canvas item. Ends in `.page`, `.assignment`, `.file`, or `.link`.
+A folder under `pages/` that represents one Canvas item. Ends in `.page`, `.assignment`, `.file`, `.link`, or `.quiz`.
 
 Example: `pages/welcome.page/` is a content folder.
+
+### Module Folder
+A folder ending in `.module` that groups content items into a Canvas module.
+
+Example: `pages/01-Week 1.module/` creates a module named "Week 1".
 
 ### Frontmatter
 YAML metadata at the top of an `index.md` file, between `---` lines. Contains settings like title, type, modules, points.
@@ -63,7 +71,7 @@ Generated files that Zaphod creates during processing:
 - `meta.json` - Parsed metadata from frontmatter
 - `source.md` - Processed body content (after variables/includes)
 
-You don't edit these directly—they're regenerated from `index.md`.
+You don't edit these directly—they're regenerated from `index.md` and cleaned up by prune.
 
 ---
 
@@ -85,6 +93,13 @@ A reusable content snippet stored in a shared location.
 → Inserts content from late-work-policy.md
 ```
 
+### Video Placeholder
+A special placeholder for Canvas video embedding.
+```markdown
+{{video:lecture.mp4}}
+→ Becomes a Canvas media iframe after upload
+```
+
 ### Interpolation
 The process of replacing variables and includes with their actual content.
 
@@ -98,13 +113,13 @@ The top-level directory for a Zaphod course. Contains `pages/`, `assets/`, etc.
 Example: `/Users/ada/courses/intro-to-design/`
 
 ### Pages Directory
-The `pages/` folder where all content items live (pages, assignments, files, links).
+The `pages/` folder where all content items live (pages, assignments, quizzes, files, links).
 
 ### Assets Folder
 The `assets/` folder where shared media files live (images, videos, PDFs).
 
-### Quiz Banks
-The `quiz-banks/` folder where `.quiz.txt` files live.
+### Quiz Banks Directory
+The `quiz-banks/` folder where `.bank.md` files live (question pools).
 
 ### Course Metadata
 The `_course_metadata/` folder where Zaphod stores internal state (cache, config, watch state).
@@ -116,7 +131,7 @@ The `_course_metadata/` folder where Zaphod stores internal state (cache, config
 ### Pipeline
 The sequence of scripts that process local files and sync them to Canvas.
 
-Steps: parse → publish → modules → outcomes → rubrics → quizzes → prune
+Steps: parse → publish → banks → quizzes → modules → outcomes → rubrics → prune
 
 ### Sync
 Running the pipeline to make Canvas match your local files. "Syncing" = "making Canvas up to date."
@@ -133,6 +148,9 @@ A long-running script that monitors files for changes and automatically runs the
 ### Debounce
 Waiting a few seconds after a change before running the pipeline (prevents running on every keystroke).
 
+### Dry Run
+Show what would happen without actually doing it (for testing).
+
 ---
 
 ## Content Types
@@ -142,6 +160,9 @@ A Canvas Page (informational content, no submission). Folder ends in `.page`.
 
 ### Assignment
 A Canvas Assignment (students submit, gets graded). Folder ends in `.assignment`.
+
+### Quiz
+A Canvas Classic Quiz. Folder ends in `.quiz`.
 
 ### File Item
 A downloadable file in Canvas (PDF, zip, etc.). Folder ends in `.file`.
@@ -153,11 +174,19 @@ An external link in Canvas (to a website, video, tool). Folder ends in `.link`.
 
 ## Quiz Terms
 
-### Quiz File
-A `.quiz.txt` file in `quiz-banks/` that defines one quiz in plain text.
+### Bank File
+A `.bank.md` file in `quiz-banks/` that defines questions for a question bank.
 
-### Question Bank
-Canvas storage for quiz questions (can be reused across quizzes). Zaphod creates these automatically.
+### Quiz Folder
+A `.quiz/` folder under `pages/` that defines a deployable quiz.
+
+### Two-Layer Model
+Zaphod's quiz architecture:
+1. **Banks** (`.bank.md`) → Question pools
+2. **Quizzes** (`.quiz/`) → Deployed quizzes that pull from banks
+
+### Question Group
+A set of questions pulled from a bank into a quiz (with pick count and points).
 
 ### NYIT Format
 The plain-text quiz format Zaphod uses (borrowed from NYIT Canvas Exam Converter).
@@ -172,12 +201,12 @@ c) 5
 
 ### Question Types
 Types of quiz questions Zaphod supports:
-- **Multiple choice** - One correct answer
-- **Multiple answers** - Multiple correct answers
+- **Multiple choice** - One correct answer (`*a)`)
+- **Multiple answers** - Multiple correct answers (`[*]`)
 - **True/False** - Two options
-- **Short answer** - Text input
-- **Essay** - Long text response
-- **File upload** - Student uploads file
+- **Short answer** - Text input (`* answer`)
+- **Essay** - Long text response (`####`)
+- **File upload** - Student uploads file (`^^^^`)
 
 ---
 
@@ -196,10 +225,10 @@ Maximum points for a criterion or assignment.
 The point threshold that indicates satisfactory performance (for outcomes).
 
 ### Shared Rubric
-A rubric defined once in `rubrics/` and reused across multiple assignments.
+A rubric defined once in `rubrics/` and reused via `use_rubric:` in assignments.
 
 ### Rubric Row
-A reusable criterion that can be included in multiple rubrics.
+A reusable criterion in `rubrics/rows/` included via `{{rubric_row:name}}`.
 
 ---
 
@@ -209,17 +238,50 @@ A reusable criterion that can be included in multiple rubrics.
 A learning goal for the entire course. Example: "Students will write clear, organized essays."
 
 ### Outcome Code
-A short identifier for an outcome (like `CLO1`, `CLO2`). Used to reference outcomes from rubrics.
+A short identifier for an outcome (like `CLO1`, `CLO2`). Used in frontmatter references.
 
-### Outcome Alignment
-Connecting rubric criteria to outcomes so Canvas can track student performance.
-
-### Outcome Map
-A file mapping outcome codes to Canvas outcome IDs (needed for alignment).
+### Outcome Ratings
+Proficiency levels for an outcome (e.g., "Exceeds", "Meets", "Approaching", "Below").
 
 ---
 
-## Git Terms (Optional but Common)
+## Caching Terms
+
+### Content Hash
+A fingerprint of file contents used to detect changes. Same content = same hash.
+
+### Upload Cache
+`_course_metadata/upload_cache.json` - Tracks uploaded files to avoid re-uploading.
+
+### Bank Cache
+`_course_metadata/bank_cache.json` - Tracks imported question banks.
+
+### Quiz Cache
+`_course_metadata/quiz_cache.json` - Tracks synced quizzes.
+
+---
+
+## Module Organization
+
+### Numeric Prefix
+A number at the start of a folder name used for ordering.
+```
+01-Introduction.module/   ← Position 1
+02-Week 1.module/         ← Position 2
+```
+
+### Module Order YAML
+`modules/module_order.yaml` - Explicit module ordering and protection.
+
+### Protected Module
+A module that won't be deleted even when empty (listed in module_order.yaml or has a `.module` folder).
+
+### Item Position
+The `position:` frontmatter field that controls where an item appears in a module.
+
+---
+
+## Git Terms (Common in Zaphod Workflows)
 
 ### Repository (Repo)
 A folder tracked by Git. Your Zaphod course folder is typically a Git repo.
@@ -230,9 +292,6 @@ A saved snapshot of your files in Git. Records who changed what, when.
 ### Branch
 A parallel version of your course (like "spring-2026" or "draft-changes").
 
-### Git History
-The log of all commits (all changes over time).
-
 ---
 
 ## Technical Terms
@@ -240,20 +299,20 @@ The log of all commits (all changes over time).
 ### API (Application Programming Interface)
 How Zaphod talks to Canvas programmatically (without clicking in the browser).
 
-### Endpoint
-A specific URL in the Canvas API (like `/courses/:id/pages`).
-
 ### Canvas API Token
 A secret key that lets Zaphod authenticate with Canvas on your behalf.
 
 ### Environment Variable
 A configuration value stored in your shell (like `COURSE_ID=123456`).
 
-### Script
-A Python program that does one part of the Zaphod pipeline (like `publish_all.py`).
+### Credentials File
+`~/.canvas/credentials.txt` - Contains your Canvas API token and URL.
 
-### Virtual Environment (venv)
-An isolated Python installation for Zaphod's dependencies (keeps your system Python clean).
+### QTI (Question and Test Interoperability)
+A standard format for quiz content. Zaphod uses QTI to import question banks.
+
+### Common Cartridge
+A standard format for course content portability. Zaphod can export to CC format.
 
 ---
 
@@ -268,77 +327,65 @@ Hide content from students (`published: false`).
 ### Prune
 Delete Canvas content that doesn't exist in local files (cleanup operation).
 
-### Dry Run
-Show what would happen without actually doing it (for testing).
-
 ### Watch Mode
 Automatic syncing when files change (the watcher runs in the background).
 
----
-
-## Common Abbreviations
-
-- **LMS** - Learning Management System (Canvas)
-- **CLI** - Command Line Interface (terminal commands)
-- **UI** - User Interface (visual interface)
-- **API** - Application Programming Interface
-- **YAML** - Yet Another Markup Language (the frontmatter format)
-- **JSON** - JavaScript Object Notation (a data format)
-- **CSV** - Comma-Separated Values (spreadsheet format)
-- **PDF** - Portable Document Format
-- **CLO** - Course Learning Outcome
-- **MD** - Markdown (the `.md` file format)
+### Assets Only Mode
+Only upload assets without publishing content (`--assets-only`).
 
 ---
 
-## Zaphod-Specific Jargon
+## CLI Commands Reference
 
-### "Sync to Canvas"
-Run the pipeline to update Canvas.
-
-### "The pipeline"
-The full sequence of processing scripts.
-
-### "Content folder"
-A folder under `pages/` ending in `.page`, `.assignment`, etc.
-
-### "Work files"
-Generated `meta.json` and `source.md` files.
-
-### "The watcher"
-`watch_and_publish.py` running in the background.
-
-### "Canvas shell"
-One instance of a Canvas course (one course ID).
-
-### "Source of truth"
-Your local files (Canvas is the reflection).
-
----
-
-## Command Examples with Translations
 ```bash
-# "Run the sync"
+# Sync everything
 zaphod sync
 
-# "Start the watcher"
+# Sync with watch mode
 zaphod sync --watch
 
-# "See what would be deleted without deleting it"
-zaphod prune --dry-run
+# Preview changes
+zaphod sync --dry-run
 
-# "List all content"
+# Skip cleanup
+zaphod sync --no-prune
+
+# List content
 zaphod list
+zaphod list --type quiz
 
-# "Create a new page"
+# Create new content
 zaphod new --type page --name "Week 1"
 
-# "Check for problems"
+# Preview deletions
+zaphod prune --dry-run
+
+# Check for problems
 zaphod validate
 
-# "Show course info"
+# Show course info
 zaphod info
+
+# Export course
+zaphod export
 ```
+
+---
+
+## File Extension Quick Reference
+
+| Extension | Type |
+|-----------|------|
+| `.md` | Markdown file (editable content) |
+| `.json` | JSON data (machine-readable) |
+| `.yaml` / `.yml` | YAML config (human-readable) |
+| `.page/` | Canvas Page folder |
+| `.assignment/` | Canvas Assignment folder |
+| `.quiz/` | Canvas Quiz folder |
+| `.link/` | External link folder |
+| `.file/` | File download folder |
+| `.module/` | Module grouping folder |
+| `.bank.md` | Question bank file |
 
 ---
 
@@ -356,124 +403,15 @@ zaphod info
 **"That's in the cache"**
 → Already uploaded to Canvas, won't re-upload
 
-**"The content folder"**
-→ The `something.page` or `something.assignment` folder
-
-**"Run it in dry-run mode"**
-→ Preview what would happen without doing it
-
 **"Canvas is the reflection"**
 → Local files are authoritative, Canvas mirrors them
 
 **"It's a work file"**
-→ Generated file, don't edit directly
+→ Generated file (`meta.json`, `source.md`), don't edit directly
+
+**"Two-layer model"**
+→ Banks (question pools) + Quizzes (deployed tests)
 
 ---
 
-## When to Use What
-
-### Page vs Assignment
-- **Page**: Informational content, no submission
-- **Assignment**: Students submit work, gets graded
-
-### Assets vs Content Folder
-- **Assets**: Shared across multiple pages/assignments
-- **Content folder**: Specific to one page/assignment
-
-### Full Mode vs Incremental
-- **Full**: Process everything (first sync, big changes)
-- **Incremental**: Process only changed files (daily work)
-
-### Sync vs Watch
-- **Sync**: Run once, manual
-- **Watch**: Run automatically, continuous
-
-### Prune vs Publish
-- **Publish**: Add/update content in Canvas
-- **Prune**: Remove stale content from Canvas
-
----
-
-## FAQ Translations
-
-**Q: "Where does this page go in Canvas?"**
-A: Check the `modules` list in its frontmatter.
-
-**Q: "Why isn't my change showing up?"**
-A: Did you sync? Check if watcher is running. Check Canvas cache.
-
-**Q: "Can I edit in Canvas?"**
-A: No! Edit locally. Canvas edits will be overwritten on next sync.
-
-**Q: "How do I make a quiz?"**
-A: Create a `.quiz.txt` file in `quiz-banks/`.
-
-**Q: "How do I share content across pages?"**
-A: Use includes: `{{include:snippet-name}}`
-
-**Q: "Where do images go?"**
-A: `assets/` for shared, or in the content folder for page-specific.
-
-**Q: "What if I break something?"**
-A: Use Git to roll back. Or sync to sandbox first.
-
----
-
-## Symbol Reference
-
-### In Frontmatter
-- `---` - YAML delimiter (start/end frontmatter)
-- `"quotes"` - String value
-- `- item` - List item
-- `:` - Key-value separator
-
-### In Body
-- `#` - Heading
-- `*italic*` or `_italic_` - Italic text
-- `**bold**` or `__bold__` - Bold text
-- `[text](url)` - Link
-- `![alt](image.jpg)` - Image
-- `{{var:key}}` - Variable
-- `{{include:name}}` - Include
-- `{{video:file.mp4}}` - Video embed
-
-### In Quiz Files
-- `*` - Correct answer marker
-- `[*]` - Correct answer (multiple)
-- `####` - Essay question
-- `^^^^` - File upload question
-- `a) b) c)` - Answer options
-
----
-
-## File Extension Quick Reference
-
-- `.md` - Markdown file (editable content)
-- `.json` - JSON data (machine-readable)
-- `.yaml` or `.yml` - YAML config (human-readable)
-- `.txt` - Plain text (quiz files use this)
-- `.page` - Folder containing a Canvas Page
-- `.assignment` - Folder containing a Canvas Assignment
-- `.link` - Folder containing an external link item
-- `.file` - Folder containing a file item
-
----
-
-## Getting Help
-
-**In this documentation:**
-- README.md - Overview and getting started
-- ARCHITECTURE.md - How Zaphod works internally
-- DECISIONS.md - Why things are designed this way
-- KNOWN-ISSUES.md - Problems and limitations
-- GLOSSARY.md - You are here!
-
-**For specific features:**
-- 01-pages.md through 10-pipeline.md - Detailed guides
-
-**When stuck:**
-1. Check GLOSSARY.md (this file) for term definitions
-2. Check KNOWN-ISSUES.md for known problems
-3. Try `--dry-run` to preview
-4. Check Git history to see what changed
-5. Search documentation for the concept
+*Last updated: January 2026*
