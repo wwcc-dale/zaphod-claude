@@ -96,8 +96,13 @@ my-course/
 │   └── videos/
 ├── outcomes/
 │   └── outcomes.yaml
-└── modules/
-    └── module_order.yaml       # Optional explicit ordering
+├── modules/
+│   └── module_order.yaml       # Optional explicit ordering
+└── rubrics/
+    ├── my-shared-rubric.yaml
+    └── rows/
+        ├── my-rubric-row.yaml
+        └── another-rubric-row.yaml
 ```
 
 ---
