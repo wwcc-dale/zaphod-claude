@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import ipaddress
 import json
 import shutil
 import sys
@@ -54,6 +55,70 @@ except ImportError:
 COURSE_ROOT = Path.cwd()
 METADATA_DIR = COURSE_ROOT / "_course_metadata"
 MANIFEST_PATH = METADATA_DIR / "media_manifest.json"
+
+
+# =============================================================================
+# Security Functions
+# =============================================================================
+
+def is_safe_path(base_dir: Path, target_path: Path) -> bool:
+    """
+    SECURITY: Check if target_path is safely within base_dir.
+    
+    Prevents path traversal attacks via symlinks or ../ sequences.
+    """
+    try:
+        base_resolved = base_dir.resolve()
+        target_resolved = target_path.resolve()
+        target_resolved.relative_to(base_resolved)
+        return True
+    except ValueError:
+        return False
+
+
+def is_safe_url(url: str) -> bool:
+    """
+    SECURITY: Validate URL is not pointing to internal/metadata services.
+    
+    Prevents SSRF attacks against cloud metadata endpoints and internal networks.
+    """
+    try:
+        parsed = urlparse(url)
+        hostname = parsed.hostname
+        
+        if not hostname:
+            return False
+        
+        # Block common metadata endpoints
+        blocked_hosts = {
+            '169.254.169.254',      # AWS/Azure instance metadata
+            'metadata.google.internal',  # GCP metadata
+            'metadata.google.com',
+            'localhost',
+            '127.0.0.1',
+            '::1',
+            '0.0.0.0',
+        }
+        
+        hostname_lower = hostname.lower()
+        if hostname_lower in blocked_hosts:
+            return False
+        
+        # Block .internal domains (common for cloud internal services)
+        if hostname_lower.endswith('.internal'):
+            return False
+        
+        # Block private IP ranges
+        try:
+            ip = ipaddress.ip_address(hostname)
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+                return False
+        except ValueError:
+            pass  # Not an IP address, hostname is OK
+        
+        return True
+    except Exception:
+        return False
 
 
 def compute_sha256(file_path: Path) -> str:
@@ -123,6 +188,12 @@ def download_from_http(url: str, dest_path: Path) -> bool:
         print("    [error] 'requests' library not installed. Run: pip install requests")
         return False
     
+    # SECURITY: Validate URL to prevent SSRF attacks
+    if not is_safe_url(url):
+        print(f"    [SECURITY] Blocked potentially unsafe URL: {url}")
+        print("    [SECURITY] Internal/private addresses are not allowed")
+        return False
+    
     try:
         dest_path.parent.mkdir(parents=True, exist_ok=True)
         
@@ -155,16 +226,21 @@ def hydrate_file(
     checksum = item.get('checksum', '')
     size_bytes = item.get('size_bytes', 0)
     
+    # SECURITY: Validate path is within course directory (prevent path traversal)
+    if not is_safe_path(COURSE_ROOT, local_path):
+        print(f"  [SECURITY] Blocked path traversal attempt: {relative_path}")
+        return 'failed'
+    
     # Check if file exists locally
     if local_path.exists():
         if verify and checksum:
             if verify_checksum(local_path, checksum):
-                print(f"  ✓ {relative_path} (exists, checksum OK)")
+                print(f"  âœ“ {relative_path} (exists, checksum OK)")
                 return 'skipped'
             else:
-                print(f"  ⚠ {relative_path} (exists, checksum MISMATCH - will re-download)")
+                print(f"  âš  {relative_path} (exists, checksum MISMATCH - will re-download)")
         else:
-            print(f"  ✓ {relative_path} (exists)")
+            print(f"  âœ“ {relative_path} (exists)")
             return 'skipped'
     
     # Build source path
@@ -177,10 +253,10 @@ def hydrate_file(
     size_mb = size_bytes / (1024 * 1024) if size_bytes else 0
     
     if dry_run:
-        print(f"  → {relative_path} ({size_mb:.1f} MB) - would download from {source_path}")
+        print(f"  â†’ {relative_path} ({size_mb:.1f} MB) - would download from {source_path}")
         return 'skipped'
     
-    print(f"  ↓ {relative_path} ({size_mb:.1f} MB)")
+    print(f"  â†“ {relative_path} ({size_mb:.1f} MB)")
     print(f"    from: {source_path}")
     
     # Download/copy
@@ -195,9 +271,9 @@ def hydrate_file(
     # Verify after download
     if verify and checksum:
         if verify_checksum(local_path, checksum):
-            print(f"    ✓ checksum verified")
+            print(f"    âœ“ checksum verified")
         else:
-            print(f"    ⚠ checksum mismatch after download!")
+            print(f"    âš  checksum mismatch after download!")
             return 'failed'
     
     return 'downloaded'

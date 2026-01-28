@@ -39,6 +39,25 @@ METADATA_DIR = COURSE_ROOT / "_course_metadata"
 UPLOAD_CACHE_FILE = METADATA_DIR / "upload_cache.json"
 
 
+# =============================================================================
+# Security Functions
+# =============================================================================
+
+def is_safe_path(base_dir: Path, target_path: Path) -> bool:
+    """
+    SECURITY: Check if target_path is safely within base_dir.
+    
+    Prevents path traversal attacks via symlinks or ../ sequences.
+    """
+    try:
+        base_resolved = base_dir.resolve()
+        target_resolved = target_path.resolve()
+        target_resolved.relative_to(base_resolved)
+        return True
+    except ValueError:
+        return False
+
+
 def get_content_dir() -> Path:
     """Get content directory, preferring content/ over pages/."""
     if CONTENT_DIR.exists():
@@ -336,6 +355,9 @@ def find_local_asset(folder: Path, filename: str) -> Path | None:
     For auto-discovery (#4), if multiple files match the same filename,
     prints a warning and returns None (user must use explicit path).
     
+    SECURITY: All paths are validated to be within COURSE_ROOT or ASSETS_DIR
+    to prevent path traversal attacks.
+    
     Returns the Path if found (unambiguously), None otherwise.
     """
     clean_name = Path(filename).name
@@ -343,19 +365,35 @@ def find_local_asset(folder: Path, filename: str) -> Path | None:
     # 1. Check content folder for exact filename
     local_path = folder / clean_name
     if local_path.is_file():
-        return local_path
+        # SECURITY: Validate path is within course directory
+        if is_safe_path(COURSE_ROOT, local_path):
+            return local_path
+        else:
+            print(f"[assets:SECURITY] Blocked path traversal: {filename}")
+            return None
     
     # 2. Try explicit relative path from content folder, resolved
     #    This handles ../assets/images/logo.png correctly
     relative_path = (folder / filename).resolve()
     if relative_path.is_file():
-        return relative_path
+        # SECURITY: Validate resolved path is within course directory
+        if is_safe_path(COURSE_ROOT, relative_path):
+            return relative_path
+        else:
+            print(f"[assets:SECURITY] Blocked path traversal: {filename}")
+            print(f"[assets:SECURITY] Resolved path {relative_path} is outside course directory")
+            return None
     
     # 3. Try path relative to assets/ directory (e.g., images/logo.png)
     if ASSETS_DIR.exists():
         asset_relative = ASSETS_DIR / filename
         if asset_relative.is_file():
-            return asset_relative
+            # SECURITY: Validate path is within assets directory
+            if is_safe_path(ASSETS_DIR, asset_relative):
+                return asset_relative
+            else:
+                print(f"[assets:SECURITY] Blocked path traversal: {filename}")
+                return None
         
         # 4. Auto-discover: search all subfolders for filename match
         #    But only if we haven't already found it via explicit path
@@ -623,7 +661,7 @@ def bulk_upload_assets(course, cache: dict):
             content_hash = hashlib.md5(file_path.read_bytes()).hexdigest()[:12]
             cache_key = f"{course.id}:{filename}:{content_hash}"
             if cache_key in cache:
-                print(f"[bulk-upload] Ã¢Å“â€œ {filename} (already uploaded)")
+                print(f"[bulk-upload] ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“ {filename} (already uploaded)")
                 skipped += 1
                 continue
 
@@ -631,7 +669,7 @@ def bulk_upload_assets(course, cache: dict):
             uploaded += 1
         except Exception as e:
             failed += 1
-            print(f"[bulk-upload] Ã¢Å“â€” {filename}: {type(e).__name__}: {e}")
+            print(f"[bulk-upload] ÃƒÂ¢Ã…â€œÃ¢â‚¬â€ {filename}: {type(e).__name__}: {e}")
 
     print(f"\n[bulk-upload] Summary: {uploaded} uploaded, {skipped} skipped, {failed} failed")
     save_upload_cache(cache)
@@ -729,7 +767,7 @@ def main():
 
             # Publish to Canvas
             obj.publish(course, overwrite=True)
-            print(f"[Ã¢Å“â€œ publish] {d.name}")
+            print(f"[ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“ publish] {d.name}")
             
         except Exception as e:
             print(f"[publish:err] {d.name}: {type(e).__name__}: {e}")

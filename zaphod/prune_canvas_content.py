@@ -518,7 +518,18 @@ def main():
     apply = args.apply or env_apply_default
     prune_assignments = args.prune_assignments or env_prune_assignments_default
 
-    canvas = make_canvas_api_obj()
+    # Try to connect to Canvas - gracefully handle offline situations
+    try:
+        canvas = make_canvas_api_obj()
+    except Exception as e:
+        if not apply:
+            # In dry-run mode, we can still do local work file cleanup
+            print(f"[prune] Cannot connect to Canvas: {e}")
+            print("[prune] Running in offline mode (local cleanup only)")
+            cleanup_work_files()
+            return
+        else:
+            raise SystemExit(f"[prune] Cannot connect to Canvas: {e}")
 
     if args.course_id:
         course_id = args.course_id
@@ -527,7 +538,16 @@ def main():
         if not course_id:
             raise SystemExit("COURSE_ID not set and --course-id not provided.")
 
-    course = canvas.get_course(course_id)
+    try:
+        course = canvas.get_course(course_id)
+    except Exception as e:
+        if not apply:
+            print(f"[prune] Cannot access course {course_id}: {e}")
+            print("[prune] Running in offline mode (local cleanup only)")
+            cleanup_work_files()
+            return
+        else:
+            raise SystemExit(f"[prune] Cannot access course: {e}")
     print(
         f"[prune] Pruning against course: {course.name} (ID {course_id}), "
         f"apply={apply}, prune_assignments={prune_assignments}"
