@@ -12,11 +12,13 @@ handling across all Zaphod scripts.
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import os
 import re
 import stat
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, Union
+from urllib.parse import urlparse
 import warnings
 
 
@@ -340,6 +342,69 @@ def validate_url(url: str) -> str:
         raise ValueError(f"Invalid URL: {url}")
     
     return url.rstrip('/')
+
+
+def is_safe_url(url: str) -> bool:
+    """
+    SECURITY: Validate URL is not pointing to internal/metadata services.
+
+    Prevents SSRF (Server-Side Request Forgery) attacks against:
+    - Cloud metadata endpoints (AWS, Azure, GCP)
+    - Internal networks and private IP ranges
+    - Localhost and loopback addresses
+    - Reserved IP addresses
+
+    Args:
+        url: URL string to validate
+
+    Returns:
+        True if URL is safe to fetch, False otherwise
+
+    Example:
+        >>> is_safe_url("https://example.com/file.pdf")
+        True
+        >>> is_safe_url("http://169.254.169.254/latest/meta-data/")
+        False
+        >>> is_safe_url("http://10.0.0.1/internal")
+        False
+    """
+    try:
+        parsed = urlparse(url)
+        hostname = parsed.hostname
+
+        if not hostname:
+            return False
+
+        # Block common metadata endpoints
+        blocked_hosts = {
+            '169.254.169.254',           # AWS/Azure instance metadata
+            'metadata.google.internal',   # GCP metadata
+            'metadata.google.com',
+            'localhost',
+            '127.0.0.1',
+            '::1',
+            '0.0.0.0',
+        }
+
+        hostname_lower = hostname.lower()
+        if hostname_lower in blocked_hosts:
+            return False
+
+        # Block .internal domains (common for cloud internal services)
+        if hostname_lower.endswith('.internal'):
+            return False
+
+        # Block private IP ranges
+        try:
+            ip = ipaddress.ip_address(hostname)
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+                return False
+        except ValueError:
+            pass  # Not an IP address, hostname is OK
+
+        return True
+    except Exception:
+        return False
 
 
 # ============================================================================

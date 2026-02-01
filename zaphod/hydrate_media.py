@@ -36,13 +36,14 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import ipaddress
 import json
 import shutil
 import sys
 from pathlib import Path
 from typing import Dict, Any, Optional
 from urllib.parse import urlparse
+
+from zaphod.security_utils import is_safe_path, is_safe_url
 
 # Optional: requests for HTTP downloads
 try:
@@ -58,68 +59,8 @@ MANIFEST_PATH = METADATA_DIR / "media_manifest.json"
 
 
 # =============================================================================
-# Security Functions
+# Utility Functions
 # =============================================================================
-
-def is_safe_path(base_dir: Path, target_path: Path) -> bool:
-    """
-    SECURITY: Check if target_path is safely within base_dir.
-    
-    Prevents path traversal attacks via symlinks or ../ sequences.
-    """
-    try:
-        base_resolved = base_dir.resolve()
-        target_resolved = target_path.resolve()
-        target_resolved.relative_to(base_resolved)
-        return True
-    except ValueError:
-        return False
-
-
-def is_safe_url(url: str) -> bool:
-    """
-    SECURITY: Validate URL is not pointing to internal/metadata services.
-    
-    Prevents SSRF attacks against cloud metadata endpoints and internal networks.
-    """
-    try:
-        parsed = urlparse(url)
-        hostname = parsed.hostname
-        
-        if not hostname:
-            return False
-        
-        # Block common metadata endpoints
-        blocked_hosts = {
-            '169.254.169.254',      # AWS/Azure instance metadata
-            'metadata.google.internal',  # GCP metadata
-            'metadata.google.com',
-            'localhost',
-            '127.0.0.1',
-            '::1',
-            '0.0.0.0',
-        }
-        
-        hostname_lower = hostname.lower()
-        if hostname_lower in blocked_hosts:
-            return False
-        
-        # Block .internal domains (common for cloud internal services)
-        if hostname_lower.endswith('.internal'):
-            return False
-        
-        # Block private IP ranges
-        try:
-            ip = ipaddress.ip_address(hostname)
-            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
-                return False
-        except ValueError:
-            pass  # Not an IP address, hostname is OK
-        
-        return True
-    except Exception:
-        return False
-
 
 def compute_sha256(file_path: Path) -> str:
     """Compute SHA256 hash of a file."""

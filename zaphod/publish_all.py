@@ -28,6 +28,7 @@ from zaphod.errors import (
     CanvasAPIError,
     SyncError,
 )
+from zaphod.security_utils import is_safe_path
 
 
 # Paths relative to course root (cwd)
@@ -40,23 +41,8 @@ UPLOAD_CACHE_FILE = METADATA_DIR / "upload_cache.json"
 
 
 # =============================================================================
-# Security Functions
+# Content Directory Resolution
 # =============================================================================
-
-def is_safe_path(base_dir: Path, target_path: Path) -> bool:
-    """
-    SECURITY: Check if target_path is safely within base_dir.
-    
-    Prevents path traversal attacks via symlinks or ../ sequences.
-    """
-    try:
-        base_resolved = base_dir.resolve()
-        target_resolved = target_path.resolve()
-        target_resolved.relative_to(base_resolved)
-        return True
-    except ValueError:
-        return False
-
 
 def get_content_dir() -> Path:
     """Get content directory, preferring content/ over pages/."""

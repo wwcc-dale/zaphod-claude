@@ -76,7 +76,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional, Dict, Any, Tuple
 from xml.etree import ElementTree as ET
-from xml.dom import minidom
+from defusedxml import minidom  # SECURITY: Hardened against XXE attacks
 
 import requests
 import yaml
