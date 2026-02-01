@@ -176,12 +176,12 @@ def hydrate_file(
     if local_path.exists():
         if verify and checksum:
             if verify_checksum(local_path, checksum):
-                print(f"  âœ“ {relative_path} (exists, checksum OK)")
+                print(f"  ✓ {relative_path} (exists, checksum OK)")
                 return 'skipped'
             else:
-                print(f"  âš  {relative_path} (exists, checksum MISMATCH - will re-download)")
+                print(f"  ⚠ {relative_path} (exists, checksum MISMATCH - will re-download)")
         else:
-            print(f"  âœ“ {relative_path} (exists)")
+            print(f"  ✓ {relative_path} (exists)")
             return 'skipped'
     
     # Build source path
@@ -212,9 +212,9 @@ def hydrate_file(
     # Verify after download
     if verify and checksum:
         if verify_checksum(local_path, checksum):
-            print(f"    âœ“ checksum verified")
+            print(f"    ✓ checksum verified")
         else:
-            print(f"    âš  checksum mismatch after download!")
+            print(f"    ⚠ checksum mismatch after download!")
             return 'failed'
     
     return 'downloaded'

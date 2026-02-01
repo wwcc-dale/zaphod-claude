@@ -12,8 +12,8 @@ the QTI Content Migration API.
 Bank files live in quiz-banks/ and contain questions in a simple text format:
 
     quiz-banks/
-    [?]Ã…â€œ[?]Ã¢â€šÂ¬[?]Ã¢â€šÂ¬ chapter1.bank.md
-    [?]Ã…â€œ[?]Ã¢â€šÂ¬[?]Ã¢â€šÂ¬ chapter2.bank.md
+    ├── chapter1.bank.md
+    ├── chapter2.bank.md
     [?]Ã¢â‚¬Â[?]Ã¢â€šÂ¬[?]Ã¢â€šÂ¬ final-exam-pool.bank.md
 
 File format (*.bank.md):

@@ -50,7 +50,7 @@ class Issue:
         if self.line:
             loc += f":{self.line}"
         
-        icon = {"error": "âœ—", "warning": "âš ", "info": "â„¹"}[self.severity.value]
+        icon = {"error": "✗", "warning": "⚠", "info": "ℹ"}[self.severity.value]
         msg = f"  {icon} {self.message}"
         
         if self.suggestion:
@@ -85,7 +85,7 @@ class ValidationResult:
         w = len(self.warnings)
         
         if e == 0 and w == 0:
-            return f"âœ“ All {self.files_checked} files valid!"
+            return f"✓ All {self.files_checked} files valid!"
         
         parts = []
         if e > 0:
@@ -613,9 +613,9 @@ def print_results(result: ValidationResult, verbose: bool = False):
     print(f"\n{result.summary()}")
     
     if result.is_valid:
-        print("âœ“ Course is ready to sync!")
+        print("✓ Course is ready to sync!")
     else:
-        print("âœ— Fix errors before syncing.")
+        print("✗ Fix errors before syncing.")
 
 
 # CLI integration
