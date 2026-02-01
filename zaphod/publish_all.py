@@ -754,7 +754,7 @@ def main():
 
             # Publish to Canvas
             obj.publish(course, overwrite=True)
-            print(f"[ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“ publish] {d.name}")
+            print(f"[{SUCCESS} publish] {d.name}")
             
         except Exception as e:
             print(f"[publish:err] {d.name}: {type(e).__name__}: {e}")
