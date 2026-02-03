@@ -6,6 +6,7 @@ Replaces markdown2canvas's Page/Assignment/Link/File classes with native
 Zaphod implementations that:
 - Read meta.json and source.md from content folders
 - Convert markdown to HTML
+- Apply template wrappers (header/footer)
 - Create/update Canvas objects via canvasapi
 - Handle local asset uploads
 
@@ -23,6 +24,132 @@ from abc import ABC, abstractmethod
 
 import markdown
 from canvasapi.course import Course
+
+
+# ============================================================================
+# Template System
+# ============================================================================
+
+def get_course_root(content_folder: Path) -> Path:
+    """
+    Find course root by walking up from content folder.
+
+    Course root contains zaphod.yaml or pages/ or content/ directory.
+    """
+    current = content_folder
+    for _ in range(10):  # Prevent infinite loop
+        if (current / "zaphod.yaml").exists():
+            return current
+        if (current / "pages").exists() or (current / "content").exists():
+            return current
+        current = current.parent
+
+    # Fallback: assume cwd is course root
+    return Path.cwd()
+
+
+def load_template_files(course_root: Path, template_name: str = "default") -> Dict[str, str]:
+    """
+    Load template files for a given template set.
+
+    Args:
+        course_root: Course root directory
+        template_name: Name of template set (e.g., "default", "fancy")
+
+    Returns:
+        Dict with keys: header_html, header_md, footer_md, footer_html
+        Values are file contents or empty string if file doesn't exist
+    """
+    templates_dir = course_root / "templates" / template_name
+
+    template_files = {
+        "header_html": templates_dir / "header.html",
+        "header_md": templates_dir / "header.md",
+        "footer_md": templates_dir / "footer.md",
+        "footer_html": templates_dir / "footer.html",
+    }
+
+    loaded = {}
+    for key, path in template_files.items():
+        if path.exists():
+            try:
+                loaded[key] = path.read_text(encoding="utf-8")
+            except Exception:
+                loaded[key] = ""
+        else:
+            loaded[key] = ""
+
+    return loaded
+
+
+def apply_templates(content_html: str, course_root: Path, meta: Dict[str, Any]) -> str:
+    """
+    Apply template wrappers to content HTML.
+
+    Application order:
+    1. header.html
+    2. header.md (converted to HTML)
+    3. [content]
+    4. footer.md (converted to HTML)
+    5. footer.html
+
+    Args:
+        content_html: Rendered HTML content
+        course_root: Course root directory
+        meta: Content metadata (frontmatter)
+
+    Returns:
+        Wrapped HTML with templates applied
+    """
+    # Check if templates should be skipped
+    template_name = meta.get("template")
+
+    # Explicit null/false means skip templates
+    if template_name is False or template_name is None and "template" in meta:
+        return content_html
+
+    # Default to "default" template set
+    if template_name is None:
+        template_name = "default"
+
+    # Load template files
+    templates = load_template_files(course_root, template_name)
+
+    # If no template files exist, return content as-is
+    if not any(templates.values()):
+        return content_html
+
+    # Build wrapped content
+    parts = []
+
+    # 1. header.html
+    if templates["header_html"]:
+        parts.append(templates["header_html"])
+
+    # 2. header.md (convert to HTML)
+    if templates["header_md"]:
+        header_html = markdown.markdown(
+            templates["header_md"],
+            extensions=['tables', 'fenced_code', 'codehilite', 'toc', 'nl2br']
+        )
+        parts.append(header_html)
+
+    # 3. Content
+    parts.append(content_html)
+
+    # 4. footer.md (convert to HTML)
+    if templates["footer_md"]:
+        footer_html = markdown.markdown(
+            templates["footer_md"],
+            extensions=['tables', 'fenced_code', 'codehilite', 'toc', 'nl2br']
+        )
+        parts.append(footer_html)
+
+    # 5. footer.html
+    if templates["footer_html"]:
+        parts.append(templates["footer_html"])
+
+    return "\n".join(parts)
 
 
 class ZaphodContentBase(ABC):
@@ -90,7 +217,7 @@ class ZaphodPage(ZaphodContentBase):
         self.source_md = self.source_path.read_text(encoding="utf-8")
     
     def _render_html(self) -> str:
-        """Convert markdown source to HTML."""
+        """Convert markdown source to HTML and apply templates."""
         # Use Python-Markdown with common extensions
         html = markdown.markdown(
             self.source_md,
@@ -102,6 +229,11 @@ class ZaphodPage(ZaphodContentBase):
                 'nl2br',  # Newlines to <br>
             ]
         )
+
+        # Apply template wrappers
+        course_root = get_course_root(self.folder)
+        html = apply_templates(html, course_root, self.meta)
+
         return html
     
     def _find_existing(self, course: Course) -> Optional[Any]:
@@ -152,18 +284,18 @@ class ZaphodPage(ZaphodContentBase):
 
 class ZaphodAssignment(ZaphodContentBase):
     """Canvas Assignment content type."""
-    
+
     def __init__(self, folder: Path):
         super().__init__(folder)
-        
+
         # Load source content (description)
         if not self.source_path.exists():
             raise FileNotFoundError(f"No source.md in {folder}")
-        
+
         self.source_md = self.source_path.read_text(encoding="utf-8")
-    
+
     def _render_html(self) -> str:
-        """Convert markdown source to HTML."""
+        """Convert markdown source to HTML and apply templates."""
         html = markdown.markdown(
             self.source_md,
             extensions=[
@@ -174,6 +306,11 @@ class ZaphodAssignment(ZaphodContentBase):
                 'nl2br',
             ]
         )
+
+        # Apply template wrappers
+        course_root = get_course_root(self.folder)
+        html = apply_templates(html, course_root, self.meta)
+
         return html
     
     def _find_existing(self, course: Course) -> Optional[Any]:
