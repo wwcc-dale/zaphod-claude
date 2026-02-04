@@ -109,19 +109,23 @@ def load_template_files(course_root: Path, template_name: str = "default") -> Di
     return loaded
 
 
-def apply_templates(content_html: str, course_root: Path, meta: Dict[str, Any]) -> str:
+def apply_templates(source_markdown: str, course_root: Path, meta: Dict[str, Any]) -> str:
     """
-    Apply template wrappers to content HTML.
+    Apply template wrappers to content.
 
-    Application order:
-    1. header.html
-    2. header.md (converted to HTML)
-    3. [content]
-    4. footer.md (converted to HTML)
-    5. footer.html
+    IMPORTANT: This function takes MARKDOWN, not HTML, to fix the unclosed tag issue.
+    See: https://github.com/ofloveandhate/markdown2canvas/issues/35
+
+    Correct application order (per m2c fix):
+    1. Combine markdown: header.md + source.md + footer.md
+    2. Convert combined markdown to HTML (single pass)
+    3. Wrap with HTML: header.html + [rendered HTML] + footer.html
+
+    This ensures unclosed HTML tags in header.html can be closed in footer.html
+    without breaking markdown rendering.
 
     Args:
-        content_html: Rendered HTML content
+        source_markdown: Source markdown content (NOT HTML)
         course_root: Course root directory
         meta: Content metadata (frontmatter)
 
@@ -133,7 +137,11 @@ def apply_templates(content_html: str, course_root: Path, meta: Dict[str, Any]) 
 
     # Explicit null/false means skip templates
     if template_name is False or template_name is None and "template" in meta:
-        return content_html
+        # No templates - just convert markdown to HTML
+        return markdown.markdown(
+            source_markdown,
+            extensions=['tables', 'fenced_code', 'codehilite', 'toc', 'nl2br']
+        )
 
     # Default to "default" template set
     if template_name is None:
@@ -142,41 +150,43 @@ def apply_templates(content_html: str, course_root: Path, meta: Dict[str, Any]) 
     # Load template files
     templates = load_template_files(course_root, template_name)
 
-    # If no template files exist, return content as-is
+    # If no template files exist, just convert markdown to HTML
     if not any(templates.values()):
-        return content_html
+        return markdown.markdown(
+            source_markdown,
+            extensions=['tables', 'fenced_code', 'codehilite', 'toc', 'nl2br']
+        )
 
-    # Build wrapped content
-    parts = []
+    # STEP 1: Combine all MARKDOWN first (before HTML conversion)
+    markdown_parts = []
 
-    # 1. header.html
-    if templates["header_html"]:
-        parts.append(templates["header_html"])
-
-    # 2. header.md (convert to HTML)
     if templates["header_md"]:
-        header_html = markdown.markdown(
-            templates["header_md"],
-            extensions=['tables', 'fenced_code', 'codehilite', 'toc', 'nl2br']
-        )
-        parts.append(header_html)
+        markdown_parts.append(templates["header_md"])
 
-    # 3. Content
-    parts.append(content_html)
+    markdown_parts.append(source_markdown)
 
-    # 4. footer.md (convert to HTML)
     if templates["footer_md"]:
-        footer_html = markdown.markdown(
-            templates["footer_md"],
-            extensions=['tables', 'fenced_code', 'codehilite', 'toc', 'nl2br']
-        )
-        parts.append(footer_html)
+        markdown_parts.append(templates["footer_md"])
 
-    # 5. footer.html
+    # STEP 2: Convert combined markdown to HTML in single pass
+    combined_markdown = "\n\n".join(markdown_parts)
+    rendered_html = markdown.markdown(
+        combined_markdown,
+        extensions=['tables', 'fenced_code', 'codehilite', 'toc', 'nl2br']
+    )
+
+    # STEP 3: Wrap rendered HTML with header.html and footer.html
+    html_parts = []
+
+    if templates["header_html"]:
+        html_parts.append(templates["header_html"])
+
+    html_parts.append(rendered_html)
+
     if templates["footer_html"]:
-        parts.append(templates["footer_html"])
+        html_parts.append(templates["footer_html"])
 
-    return "\n".join(parts)
+    return "\n".join(html_parts)
 
 
 class ZaphodContentBase(ABC):
@@ -245,21 +255,10 @@ class ZaphodPage(ZaphodContentBase):
     
     def _render_html(self) -> str:
         """Convert markdown source to HTML and apply templates."""
-        # Use Python-Markdown with common extensions
-        html = markdown.markdown(
-            self.source_md,
-            extensions=[
-                'tables',
-                'fenced_code',
-                'codehilite',
-                'toc',
-                'nl2br',  # Newlines to <br>
-            ]
-        )
-
-        # Apply template wrappers
+        # Apply templates - this handles markdown→HTML conversion internally
+        # with proper template combination (see apply_templates for details)
         course_root = get_course_root(self.folder)
-        html = apply_templates(html, course_root, self.meta)
+        html = apply_templates(self.source_md, course_root, self.meta)
 
         return html
     
@@ -323,20 +322,10 @@ class ZaphodAssignment(ZaphodContentBase):
 
     def _render_html(self) -> str:
         """Convert markdown source to HTML and apply templates."""
-        html = markdown.markdown(
-            self.source_md,
-            extensions=[
-                'tables',
-                'fenced_code',
-                'codehilite',
-                'toc',
-                'nl2br',
-            ]
-        )
-
-        # Apply template wrappers
+        # Apply templates - this handles markdown→HTML conversion internally
+        # with proper template combination (see apply_templates for details)
         course_root = get_course_root(self.folder)
-        html = apply_templates(html, course_root, self.meta)
+        html = apply_templates(self.source_md, course_root, self.meta)
 
         return html
     

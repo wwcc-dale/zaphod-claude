@@ -262,3 +262,4 @@ Zaphod is open-source under the MIT License.
 - [User Guide](00-overview.md) (detailed documentation)
 - [Known Issues](04-KNOWN-ISSUES.md)
 - [Security](99-SECURITY.md)
+- [Development Log](DEVELOPMENT.md) (session history & changelogs)

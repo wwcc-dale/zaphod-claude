@@ -353,6 +353,49 @@ Change once → updates all pages.
 - **External dependencies** - Keep CSS/images local or in Canvas
 - **Template-specific content** - Don't put lesson content in templates
 - **Overusing HTML templates** - Markdown is easier to maintain
+- **The `<main>` tag** - Canvas commonly blocks it (use `<div role="main">` instead)
+- **Untested HTML5 tags** - Test `<nav>`, `<header>`, `<footer>` in your Canvas instance first
+
+---
+
+## Canvas HTML Restrictions
+
+**Canvas sanitizes HTML** and blocks certain tags. Restrictions vary by institution, but here's what's commonly allowed/blocked:
+
+### ✅ Confirmed Working
+- `<div>`, `<span>` (containers)
+- `<section>`, `<article>` (HTML5 semantic - work in most Canvas instances)
+- `<p>`, `<h1>`-`<h6>` (content)
+- `<ul>`, `<ol>`, `<li>` (lists)
+- `<table>`, `<tr>`, `<td>`, `<th>` (tables)
+- `<a>`, `<img>` (links/media)
+- `<strong>`, `<em>`, `<code>`, `<pre>` (formatting)
+- `<blockquote>`, `<hr>` (content)
+
+### ❌ Commonly Blocked
+- `<main>` (blocked in most Canvas instances - use `<div role="main">` instead)
+- `<script>`, `<iframe>`, `<embed>` (security)
+- `<form>`, `<input>`, `<button>` (interactive elements)
+- `<style>` (sometimes blocked - use inline styles instead)
+
+### ⚠️ Test Before Using
+- `<nav>`, `<header>`, `<footer>`, `<aside>` (may vary by institution)
+
+**Tip:** Test tags by adding them to a template and checking the Canvas HTML editor to see if they survive.
+
+### Workaround for `<main>`
+
+Since `<main>` is commonly blocked:
+
+```html
+<!-- ❌ Blocked: -->
+<main class="page-content">
+
+<!-- ✅ Use this instead: -->
+<div class="page-content" role="main">
+```
+
+The `role="main"` attribute provides semantic meaning for accessibility.
 
 ---
 
