@@ -315,16 +315,27 @@ def load_shared_rubric(name: str) -> Optional[Dict[str, Any]]:
 # ============================================================================
 
 def load_quizzes() -> List[QuizItem]:
-    """Load all quizzes from question-banks/ directory."""
+    """Load all quizzes from question-banks/ and content/ directories."""
     quizzes = []
 
-    if not QUESTION_BANKS_DIR.exists():
-        return quizzes
+    # Load from question-banks/ directory (legacy .quiz.txt files)
+    if QUESTION_BANKS_DIR.exists():
+        for quiz_file in QUESTION_BANKS_DIR.glob("*.quiz.txt"):
+            quiz = load_quiz(quiz_file)
+            if quiz:
+                quizzes.append(quiz)
 
-    for quiz_file in QUESTION_BANKS_DIR.glob("*.quiz.txt"):
-        quiz = load_quiz(quiz_file)
-        if quiz:
-            quizzes.append(quiz)
+    # Load from content/ directory (.quiz/ folders)
+    content_dir = get_content_dir()
+    if content_dir.exists():
+        for quiz_folder in content_dir.rglob("*.quiz"):
+            if not quiz_folder.is_dir():
+                continue
+            index_file = quiz_folder / "index.md"
+            if index_file.is_file():
+                quiz = load_quiz(index_file)
+                if quiz:
+                    quizzes.append(quiz)
 
     return quizzes
 

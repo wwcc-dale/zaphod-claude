@@ -431,7 +431,13 @@ def is_page_resource(resource: ResourceItem) -> bool:
 
 def is_assignment_resource(resource: ResourceItem) -> bool:
     """Check if resource is an assignment."""
-    return "assignment" in resource.resource_type.lower()
+    # Check resource type
+    if "assignment" in resource.resource_type.lower():
+        return True
+    if "learning-application-resource" in resource.resource_type.lower():
+        return True
+    # Check if has assignment.xml file
+    return any(f.endswith("assignment.xml") for f in resource.files)
 
 
 def is_quiz_resource(resource: ResourceItem) -> bool:
@@ -448,6 +454,9 @@ def is_link_resource(resource: ResourceItem) -> bool:
 
 def is_asset_resource(resource: ResourceItem) -> bool:
     """Check if resource is an asset file."""
+    # Don't treat assignments as assets
+    if is_assignment_resource(resource):
+        return False
     return "associatedcontent" in resource.resource_type.lower() or \
            resource.resource_type == "webcontent"
 
