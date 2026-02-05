@@ -130,11 +130,21 @@ class ModuleItem:
 
 
 @dataclass
+class QuestionBankItem:
+    """Represents a question bank to be imported."""
+    identifier: str
+    title: str
+    questions: List[Dict[str, Any]] = field(default_factory=list)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class CartridgeImport:
     """Container for all import data."""
     title: str
     content_items: List[ContentItem] = field(default_factory=list)
     quizzes: List[QuizItem] = field(default_factory=list)
+    question_banks: List[QuestionBankItem] = field(default_factory=list)
     modules: List[ModuleItem] = field(default_factory=list)
     assets: Dict[str, str] = field(default_factory=dict)  # Map source -> dest
 
@@ -383,9 +393,11 @@ def process_resources(
                 cartridge.content_items.append(item)
 
         elif is_quiz_resource(resource):
-            quiz = process_quiz(resource, temp_dir, module_path, position)
+            quiz, bank = process_quiz(resource, temp_dir, module_path, position)
             if quiz:
                 cartridge.quizzes.append(quiz)
+            if bank:
+                cartridge.question_banks.append(bank)
 
         elif is_link_resource(resource):
             item = process_link(resource, module_path, position)
@@ -651,13 +663,40 @@ def parse_rubric_xml(xml_path: Path) -> Optional[Dict[str, Any]]:
 # Quiz Processing
 # ============================================================================
 
+def is_question_bank(resource: ResourceItem, title: str) -> bool:
+    """
+    Determine if a QTI assessment is a question bank rather than a quiz.
+
+    Heuristics:
+    - Title/identifier contains 'bank', 'pool', 'item_bank'
+    - Not associated with any module (standalone)
+    - Resource type indicates objectbank
+    """
+    # Check identifier and title
+    check_text = f"{resource.identifier.lower()} {title.lower()}"
+    bank_keywords = ['bank', 'pool', 'item_bank', 'question_bank', 'qti_bank']
+
+    if any(keyword in check_text for keyword in bank_keywords):
+        return True
+
+    # Check resource type
+    if 'objectbank' in resource.resource_type.lower():
+        return True
+
+    return False
+
+
 def process_quiz(
     resource: ResourceItem,
     temp_dir: Path,
     module_path: str,
     position: int,
-) -> Optional[QuizItem]:
-    """Process a quiz/assessment resource."""
+) -> Tuple[Optional[QuizItem], Optional[QuestionBankItem]]:
+    """
+    Process a quiz/assessment resource.
+
+    Returns tuple of (quiz, bank) where one will be None.
+    """
     # Find assessment XML
     assessment_path = None
     for file_path in resource.files:
@@ -666,7 +705,7 @@ def process_quiz(
             break
 
     if not assessment_path or not assessment_path.is_file():
-        return None
+        return None, None
 
     try:
         tree = DefusedET.parse(assessment_path)
@@ -678,24 +717,34 @@ def process_quiz(
             assessment_elem = root.find(".//assessment")
 
         if assessment_elem is None:
-            return None
+            return None, None
 
         title = assessment_elem.get("title", resource.identifier)
 
         # Extract questions
         questions = parse_qti_questions(root)
 
-        return QuizItem(
-            identifier=resource.identifier,
-            title=title,
-            questions=questions,
-            module_path=module_path,
-            position=position,
-        )
+        # Determine if this is a question bank or a quiz
+        if is_question_bank(resource, title):
+            # This is a question bank
+            return None, QuestionBankItem(
+                identifier=resource.identifier,
+                title=title,
+                questions=questions,
+            )
+        else:
+            # This is a quiz
+            return QuizItem(
+                identifier=resource.identifier,
+                title=title,
+                questions=questions,
+                module_path=module_path,
+                position=position,
+            ), None
 
     except Exception as e:
         print(f"[import:warn] Failed to parse quiz {resource.identifier}: {e}")
-        return None
+        return None, None
 
 
 def parse_qti_questions(root: ET.Element) -> List[Dict[str, Any]]:
@@ -989,6 +1038,65 @@ def write_content_item(item: ContentItem, output_dir: Path):
     print(f"[import] Created {item.item_type}: {folder_path.name}")
 
 
+def write_question_bank(bank: QuestionBankItem, output_dir: Path):
+    """Write a question bank to a .bank.md file."""
+    question_banks_dir = output_dir / "question-banks"
+    question_banks_dir.mkdir(parents=True, exist_ok=True)
+
+    # Generate bank file
+    filename = f"{sanitize_filename(bank.title)}.bank.md"
+    bank_path = question_banks_dir / filename
+
+    # Build bank content
+    lines = []
+
+    # Header comment
+    lines.append(f"# {bank.title}")
+    lines.append("")
+    lines.append(f"<!-- Question Bank imported from cartridge -->")
+    lines.append(f"<!-- {len(bank.questions)} questions -->")
+    lines.append("")
+
+    # Questions
+    for q in bank.questions:
+        lines.append(f"{q['number']}. {q['stem']}")
+        lines.append("")
+
+        if q["type"] == "multiple_choice":
+            for i, answer in enumerate(q.get("answers", [])):
+                letter = chr(ord('a') + i)
+                prefix = f"*{letter})" if answer.get("correct") else f"{letter})"
+                lines.append(f"{prefix} {answer['text']}")
+            lines.append("")
+
+        elif q["type"] == "multiple_answers":
+            for answer in q.get("answers", []):
+                checkbox = "[*]" if answer.get("correct") else "[ ]"
+                lines.append(f"{checkbox} {answer['text']}")
+            lines.append("")
+
+        elif q["type"] == "true_false":
+            lines.append("*a) True" if q.get("answers", [{}])[0].get("correct") else "a) True")
+            lines.append("*b) False" if len(q.get("answers", [])) > 1 and q["answers"][1].get("correct") else "b) False")
+            lines.append("")
+
+        elif q["type"] == "short_answer":
+            for answer in q.get("answers", []):
+                lines.append(f"* {answer['text']}")
+            lines.append("")
+
+        elif q["type"] == "essay":
+            lines.append("####")
+            lines.append("")
+
+        elif q["type"] == "file_upload":
+            lines.append("^^^^")
+            lines.append("")
+
+    bank_path.write_text("\n".join(lines), encoding="utf-8")
+    print(f"[import] Created question bank: {filename} ({len(bank.questions)} questions)")
+
+
 def write_quiz(quiz: QuizItem, output_dir: Path):
     """Write a quiz to the file system."""
     question_banks_dir = output_dir / "question-banks"
@@ -1133,6 +1241,7 @@ def import_cartridge(
         if dry_run:
             print("\n[import] DRY RUN - No files written")
             print(f"[import] Would create {len(cartridge.content_items)} content items")
+            print(f"[import] Would create {len(cartridge.question_banks)} question banks")
             print(f"[import] Would create {len(cartridge.quizzes)} quizzes")
             print(f"[import] Would copy {len(cartridge.assets)} assets")
             return
@@ -1141,6 +1250,11 @@ def import_cartridge(
         print("\n[import] Writing content items...")
         for item in cartridge.content_items:
             write_content_item(item, output_dir)
+
+        # Write question banks
+        print("\n[import] Writing question banks...")
+        for bank in cartridge.question_banks:
+            write_question_bank(bank, output_dir)
 
         # Write quizzes
         print("\n[import] Writing quizzes...")
@@ -1153,6 +1267,7 @@ def import_cartridge(
 
         print(f"\n[import] {SUCCESS} Import complete!")
         print(f"[import]   {len(cartridge.content_items)} content items")
+        print(f"[import]   {len(cartridge.question_banks)} question banks")
         print(f"[import]   {len(cartridge.quizzes)} quizzes")
         print(f"[import]   {len(cartridge.assets)} assets")
 
