@@ -23,6 +23,9 @@ COMMANDS:
     Export:
         zaphod export [--output FILE]             Export course to Common Cartridge
 
+    Import:
+        zaphod import SOURCE [--output DIR]       Import from Canvas or cartridge
+
     Other:
         zaphod version                            Show version information
         zaphod ui [--port PORT]                   Launch web UI (experimental)
@@ -48,6 +51,12 @@ EXAMPLES:
 
     # Export for another LMS
     zaphod export --output my-course.imscc
+
+    # Import from Canvas
+    zaphod import 12345 --output ./my-course
+
+    # Import from cartridge
+    zaphod import course.imscc
 
 For more information, see the user guide in docs/user-guide/
 """
@@ -257,8 +266,9 @@ def cli(ctx):
 @click.option('--assets-only', is_flag=True, help='Only upload assets, skip content')
 @click.option('--no-prune', is_flag=True, help='Skip cleanup/prune step')
 @click.option('--dry-run', '-n', is_flag=True, help='Preview changes without making them')
+@click.option('--export', 'export_on_sync', is_flag=True, help='Export to cartridge after sync')
 @click.pass_obj
-def sync(ctx: ZaphodContext, watch: bool, course_id: Optional[int], assets_only: bool, no_prune: bool, dry_run: bool):
+def sync(ctx: ZaphodContext, watch: bool, course_id: Optional[int], assets_only: bool, no_prune: bool, dry_run: bool, export_on_sync: bool):
     """
     Sync local content to Canvas
     
@@ -292,7 +302,9 @@ def sync(ctx: ZaphodContext, watch: bool, course_id: Optional[int], assets_only:
         env = {}
         if course_id:
             env["COURSE_ID"] = str(course_id)
-        
+        if export_on_sync:
+            env["ZAPHOD_EXPORT_ON_SYNC"] = "1"
+
         try:
             ctx.run_script("watch_and_publish.py", env=env)
         except KeyboardInterrupt:
@@ -306,7 +318,9 @@ def sync(ctx: ZaphodContext, watch: bool, course_id: Optional[int], assets_only:
         env = {}
         if course_id:
             env["COURSE_ID"] = str(course_id)
-        
+        if export_on_sync:
+            env["ZAPHOD_EXPORT_ON_SYNC"] = "1"
+
         # Build script commands with --dry-run where supported
         dry_flag = " --dry-run" if dry_run else ""
         
@@ -944,6 +958,99 @@ def export(ctx: ZaphodContext, output: Optional[str], title: Optional[str], expo
         click.echo(f"\n{B_SUCCESS} Export complete!")
     else:
         click.echo("\n[x] Export failed", err=True)
+        sys.exit(result.returncode)
+
+
+# ============================================================================
+# Import
+# ============================================================================
+
+@cli.command('import')
+@click.argument('source', required=True)
+@click.option('--output', '-o', type=click.Path(), help='Output directory (default: current directory)')
+@click.pass_obj
+def import_course(ctx: ZaphodContext, source: str, output: Optional[str]):
+    """
+    Import course from Canvas or Common Cartridge file
+
+    Import a Canvas course by ID or from an IMSCC cartridge file.
+    Creates local Zaphod directory structure with markdown files.
+
+    SOURCE can be:
+      - A Canvas course ID (e.g., 12345)
+      - A Common Cartridge file path (e.g., course.imscc)
+
+    Examples:
+        zaphod import 12345                    # Import from Canvas
+        zaphod import 12345 --output ./course # Specify output dir
+        zaphod import course.imscc             # Import from cartridge
+        zaphod import course.imscc -o ./course
+
+    The import process:
+      1. Fetches course data from Canvas API or extracts cartridge
+      2. Converts HTML to markdown
+      3. Creates content/ directory with pages and assignments
+      4. Extracts rubrics, outcomes, and module structure
+      5. Downloads media files to assets/
+      6. Creates zaphod.yaml configuration
+    """
+    # Determine if source is a Canvas ID or a file path
+    is_canvas_id = source.isdigit()
+    is_cartridge_file = source.endswith('.imscc') or source.endswith('.zip')
+
+    if not is_canvas_id and not is_cartridge_file:
+        click.echo(f"{B_ERROR} Invalid source: {source}", err=True)
+        click.echo("Source must be either:", err=True)
+        click.echo("  - A Canvas course ID (numeric, e.g., 12345)", err=True)
+        click.echo("  - A Common Cartridge file (.imscc or .zip)", err=True)
+        sys.exit(1)
+
+    # Validate cartridge file exists
+    if is_cartridge_file:
+        source_path = Path(source)
+        if not source_path.exists():
+            click.echo(f"{B_ERROR} File not found: {source}", err=True)
+            sys.exit(1)
+        source = str(source_path.resolve())
+
+    # Set output directory
+    output_dir = Path(output) if output else ctx.course_root
+    output_dir = output_dir.resolve()
+
+    # Warn if output directory is not empty
+    if output_dir.exists() and any(output_dir.iterdir()):
+        if not click.confirm(f"{B_WARNING} Directory {output_dir} is not empty. Continue?"):
+            click.echo("Import cancelled.")
+            sys.exit(0)
+
+    # Create output directory if needed
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Choose the appropriate import script
+    if is_canvas_id:
+        click.echo(f"{PACKAGE} Importing Canvas course {source}...")
+        script_name = "import_from_canvas.py"
+        args = ["--course-id", source, "--output-dir", str(output_dir)]
+    else:
+        click.echo(f"{PACKAGE} Importing from cartridge: {source}")
+        script_name = "import_cartridge.py"
+        args = [source, "--output", str(output_dir)]
+
+    # Run the import script
+    click.echo()
+    result = ctx.run_script(script_name, args=args)
+
+    if result.returncode == 0:
+        click.echo(f"\n{B_SUCCESS} Import complete!")
+        click.echo()
+        click.echo("Next steps:")
+        click.echo(f"  1. cd {output_dir}")
+        click.echo("  2. Review the imported content in content/")
+        click.echo("  3. Edit zaphod.yaml to configure your course")
+        click.echo("  4. Run: zaphod validate")
+        click.echo("  5. Run: zaphod sync --dry-run")
+    else:
+        click.echo(f"\n{B_ERROR} Import failed", err=True)
         sys.exit(result.returncode)
 
 

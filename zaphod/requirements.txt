@@ -14,6 +14,11 @@ PyYAML>=6.0
 python-frontmatter>=1.0.0
 Markdown>=3.4.0
 
+# HTML to Markdown conversion (for import functionality)
+html2text>=2020.1.16
+beautifulsoup4>=4.9.0
+markdownify>=0.11.0
+
 # File watching (for sync --watch)
 watchdog>=3.0.0
 

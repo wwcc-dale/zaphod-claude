@@ -19,6 +19,7 @@ Assumptions:
     ZAPHOD_PRUNE              (optional, truthy to enable prune step)
     ZAPHOD_PRUNE_APPLY        (optional, truthy to actually delete)
     ZAPHOD_PRUNE_ASSIGNMENTS  (optional, truthy to include assignments)
+    ZAPHOD_EXPORT_ON_SYNC     (optional, truthy to export after each sync)
 """
 
 from __future__ import annotations
@@ -273,6 +274,21 @@ def run_pipeline(changed_files: list[Path]):
                 env=env,
                 check=False,
             )
+
+        # Optional: Export to Common Cartridge (if enabled)
+        if _truthy_env("ZAPHOD_EXPORT_ON_SYNC"):
+            export_script = SCRIPT_DIR / "export_cartridge.py"
+            if export_script.is_file():
+                fence(f"RUNNING: {export_script.name}")
+                # SECURITY: Safe from command injection - uses list format, validated paths
+                subprocess.run(
+                    [str(python_exe), str(export_script), "--watch-mode"],
+                    cwd=str(COURSE_ROOT),
+                    env=env,
+                    check=False,
+                )
+            else:
+                print(f"[watch] WARN: export script not found at {export_script}")
 
         fence("Zaphod pipeline complete")
     finally:
