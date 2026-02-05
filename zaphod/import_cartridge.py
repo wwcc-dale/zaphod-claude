@@ -564,31 +564,48 @@ def parse_assignment_xml(xml_path: Path) -> Dict[str, Any]:
 
         metadata = {}
 
+        # Handle namespace if present
+        ns = {"cc": "http://canvas.instructure.com/xsd/cccv1p0"}
+        ns_prefix = "{http://canvas.instructure.com/xsd/cccv1p0}"
+
+        # Helper to find elements with or without namespace
+        def find_text(path: str) -> Optional[str]:
+            # Try with namespace
+            elem = root.find(f".//cc:{path}", ns)
+            if elem is not None and elem.text:
+                return elem.text.strip()
+            # Try without namespace
+            elem = root.find(f".//{path}")
+            if elem is not None and elem.text:
+                return elem.text.strip()
+            # Try with namespace prefix directly
+            elem = root.find(f".//{ns_prefix}{path}")
+            if elem is not None and elem.text:
+                return elem.text.strip()
+            return None
+
         # Extract title
-        title_elem = root.find(".//title")
-        if title_elem is not None and title_elem.text:
-            metadata["title"] = title_elem.text.strip()
+        title = find_text("title")
+        if title:
+            metadata["title"] = title
 
         # Extract points
-        points_elem = root.find(".//points_possible")
-        if points_elem is not None and points_elem.text:
+        points = find_text("points_possible")
+        if points:
             try:
-                metadata["points_possible"] = float(points_elem.text)
+                metadata["points_possible"] = float(points)
             except ValueError:
                 pass
 
-        # Extract submission types
-        submission_types = []
-        for sub_elem in root.findall(".//submission_type"):
-            if sub_elem.text:
-                submission_types.append(sub_elem.text.strip())
-        if submission_types:
-            metadata["submission_types"] = submission_types
+        # Extract submission types (handle as single element with comma-separated values)
+        submission_types_text = find_text("submission_types")
+        if submission_types_text:
+            metadata["submission_types"] = [s.strip() for s in submission_types_text.split(",")]
 
         # Extract grading type
-        grading_elem = root.find(".//grading_type")
-        if grading_elem is not None and grading_elem.text:
-            metadata["grading_type"] = grading_elem.text.strip()
+        grading_type = find_text("grading_type")
+        if grading_type:
+            metadata["grading_type"] = grading_type
 
         return metadata
 
@@ -605,30 +622,51 @@ def parse_rubric_xml(xml_path: Path) -> Optional[Dict[str, Any]]:
 
         rubric = {}
 
+        # Handle Canvas rubric namespace
+        ns = {"r": "http://canvas.instructure.com/xsd/rubric"}
+
+        # Helper to find elements with or without namespace
+        def find_elem(parent, path: str):
+            # Try with namespace
+            elem = parent.find(f".//r:{path}", ns)
+            if elem is not None:
+                return elem
+            # Try without namespace
+            elem = parent.find(f".//{path}")
+            return elem
+
+        def find_all(parent, path: str):
+            # Try with namespace
+            elems = parent.findall(f".//r:{path}", ns)
+            if elems:
+                return elems
+            # Try without namespace
+            return parent.findall(f".//{path}")
+
         # Extract title
-        title_elem = root.find(".//title")
+        title_elem = find_elem(root, "title")
         if title_elem is not None and title_elem.text:
             rubric["title"] = title_elem.text.strip()
 
         # Extract description
-        desc_elem = root.find(".//description")
+        desc_elem = find_elem(root, "description")
         if desc_elem is not None and desc_elem.text:
             rubric["description"] = desc_elem.text.strip()
 
         # Extract criteria
         criteria = []
-        for crit_elem in root.findall(".//criterion"):
+        for crit_elem in find_all(root, "criterion"):
             criterion = {}
 
-            desc = crit_elem.find(".//description")
+            desc = find_elem(crit_elem, "description")
             if desc is not None and desc.text:
                 criterion["description"] = desc.text.strip()
 
-            long_desc = crit_elem.find(".//long_description")
+            long_desc = find_elem(crit_elem, "long_description")
             if long_desc is not None and long_desc.text:
                 criterion["long_description"] = long_desc.text.strip()
 
-            points = crit_elem.find(".//points")
+            points = find_elem(crit_elem, "points")
             if points is not None and points.text:
                 try:
                     criterion["points"] = float(points.text)
@@ -637,14 +675,14 @@ def parse_rubric_xml(xml_path: Path) -> Optional[Dict[str, Any]]:
 
             # Extract ratings
             ratings = []
-            for rating_elem in crit_elem.findall(".//rating"):
+            for rating_elem in find_all(crit_elem, "rating"):
                 rating = {}
 
-                r_desc = rating_elem.find(".//description")
+                r_desc = find_elem(rating_elem, "description")
                 if r_desc is not None and r_desc.text:
                     rating["description"] = r_desc.text.strip()
 
-                r_points = rating_elem.find(".//points")
+                r_points = find_elem(rating_elem, "points")
                 if r_points is not None and r_points.text:
                     try:
                         rating["points"] = float(r_points.text)
@@ -762,8 +800,11 @@ def parse_qti_questions(root: ET.Element) -> List[Dict[str, Any]]:
     """Parse QTI questions from assessment XML."""
     questions = []
 
-    # Find all item elements
-    items = root.findall(".//{http://www.imsglobal.org/xsd/ims_qtiasiv1p2}item")
+    # Define QTI namespace
+    qti_ns = {"qti": "http://www.imsglobal.org/xsd/ims_qtiasiv1p2"}
+
+    # Find all item elements (try with namespace first, then without)
+    items = root.findall(".//qti:item", qti_ns)
     if not items:
         items = root.findall(".//item")
 
@@ -778,16 +819,36 @@ def parse_qti_questions(root: ET.Element) -> List[Dict[str, Any]]:
 def parse_qti_item(item: ET.Element, number: int) -> Optional[Dict[str, Any]]:
     """Parse a single QTI item."""
     try:
+        # Define QTI namespace
+        qti_ns = {"qti": "http://www.imsglobal.org/xsd/ims_qtiasiv1p2"}
+
+        # Helper to find with or without namespace
+        def find_elem(parent, path: str):
+            # Try with namespace
+            elem = parent.find(f".//qti:{path}", qti_ns)
+            if elem is not None:
+                return elem
+            # Try without namespace
+            return parent.find(f".//{path}")
+
+        def find_all(parent, path: str):
+            # Try with namespace
+            elems = parent.findall(f".//qti:{path}", qti_ns)
+            if elems:
+                return elems
+            # Try without namespace
+            return parent.findall(f".//{path}")
+
         # Extract title
         title = item.get("title", f"Question {number}")
 
         # Extract question type from metadata
         qtype = "multiple_choice"
-        qtimetadata = item.find(".//qtimetadata")
+        qtimetadata = find_elem(item, "qtimetadata")
         if qtimetadata is not None:
-            for field in qtimetadata.findall(".//qtimetadatafield"):
-                label = field.find(".//fieldlabel")
-                entry = field.find(".//fieldentry")
+            for field in find_all(qtimetadata, "qtimetadatafield"):
+                label = find_elem(field, "fieldlabel")
+                entry = find_elem(field, "fieldentry")
 
                 if label is not None and entry is not None:
                     if label.text and "cc_profile" in label.text.lower():
@@ -795,7 +856,7 @@ def parse_qti_item(item: ET.Element, number: int) -> Optional[Dict[str, Any]]:
                             qtype = map_qti_type(entry.text)
 
         # Extract question text
-        mattext = item.find(".//mattext")
+        mattext = find_elem(item, "mattext")
         if mattext is None or not mattext.text:
             return None
 
@@ -803,19 +864,22 @@ def parse_qti_item(item: ET.Element, number: int) -> Optional[Dict[str, Any]]:
 
         # Extract points
         points = 1.0
-        weighting = item.find(".//qtimetadatafield[fieldlabel='cc_weighting']/fieldentry")
-        if weighting is not None and weighting.text:
-            try:
-                points = float(weighting.text)
-            except ValueError:
-                pass
+        for field in find_all(item, "qtimetadatafield"):
+            label = find_elem(field, "fieldlabel")
+            entry = find_elem(field, "fieldentry")
+            if label is not None and label.text and "cc_weighting" in label.text:
+                if entry is not None and entry.text:
+                    try:
+                        points = float(entry.text)
+                    except ValueError:
+                        pass
 
         # Extract answers based on type
         answers = []
         if qtype in ["multiple_choice", "multiple_answers", "true_false"]:
-            answers = parse_choice_answers(item)
+            answers = parse_choice_answers(item, qti_ns)
         elif qtype == "short_answer":
-            answers = parse_short_answers(item)
+            answers = parse_short_answers(item, qti_ns)
 
         return {
             "number": number,
@@ -850,23 +914,36 @@ def map_qti_type(qti_type: str) -> str:
         return "multiple_choice"
 
 
-def parse_choice_answers(item: ET.Element) -> List[Dict[str, Any]]:
+def parse_choice_answers(item: ET.Element, qti_ns: Dict[str, str]) -> List[Dict[str, Any]]:
     """Parse multiple choice/answers from QTI item."""
     answers = []
 
+    # Helper to find with or without namespace
+    def find_all(parent, path: str):
+        elems = parent.findall(f".//qti:{path}", qti_ns)
+        if elems:
+            return elems
+        return parent.findall(f".//{path}")
+
+    def find_elem(parent, path: str):
+        elem = parent.find(f".//qti:{path}", qti_ns)
+        if elem is not None:
+            return elem
+        return parent.find(f".//{path}")
+
     # Find response labels
-    for label in item.findall(".//response_label"):
+    for label in find_all(item, "response_label"):
         answer_id = label.get("ident", "")
 
         # Get answer text
-        mattext = label.find(".//mattext")
+        mattext = find_elem(label, "mattext")
         if mattext is None or not mattext.text:
             continue
 
         text = strip_html_tags(mattext.text)
 
         # Check if correct
-        is_correct = is_correct_answer(item, answer_id)
+        is_correct = is_correct_answer(item, answer_id, qti_ns)
 
         answers.append({
             "text": text,
@@ -876,17 +953,30 @@ def parse_choice_answers(item: ET.Element) -> List[Dict[str, Any]]:
     return answers
 
 
-def is_correct_answer(item: ET.Element, answer_id: str) -> bool:
+def is_correct_answer(item: ET.Element, answer_id: str, qti_ns: Dict[str, str]) -> bool:
     """Check if an answer is marked as correct in QTI."""
+    # Helper to find with or without namespace
+    def find_elem(parent, path: str):
+        elem = parent.find(f".//qti:{path}", qti_ns)
+        if elem is not None:
+            return elem
+        return parent.find(f".//{path}")
+
+    def find_all(parent, path: str):
+        elems = parent.findall(f".//qti:{path}", qti_ns)
+        if elems:
+            return elems
+        return parent.findall(f".//{path}")
+
     # Find response processing
-    resprocessing = item.find(".//resprocessing")
+    resprocessing = find_elem(item, "resprocessing")
     if resprocessing is None:
         return False
 
     # Look for conditions that set score to 100 for this answer
-    for respcondition in resprocessing.findall(".//respcondition"):
-        varequal = respcondition.find(".//varequal")
-        setvar = respcondition.find(".//setvar")
+    for respcondition in find_all(resprocessing, "respcondition"):
+        varequal = find_elem(respcondition, "varequal")
+        setvar = find_elem(respcondition, "setvar")
 
         if varequal is not None and setvar is not None:
             if varequal.text and varequal.text.strip() == answer_id:
@@ -896,14 +986,27 @@ def is_correct_answer(item: ET.Element, answer_id: str) -> bool:
     return False
 
 
-def parse_short_answers(item: ET.Element) -> List[Dict[str, Any]]:
+def parse_short_answers(item: ET.Element, qti_ns: Dict[str, str]) -> List[Dict[str, Any]]:
     """Parse short answer responses from QTI item."""
     answers = []
 
+    # Helper to find with or without namespace
+    def find_elem(parent, path: str):
+        elem = parent.find(f".//qti:{path}", qti_ns)
+        if elem is not None:
+            return elem
+        return parent.find(f".//{path}")
+
+    def find_all(parent, path: str):
+        elems = parent.findall(f".//qti:{path}", qti_ns)
+        if elems:
+            return elems
+        return parent.findall(f".//{path}")
+
     # Find all varequal elements in response processing
-    resprocessing = item.find(".//resprocessing")
+    resprocessing = find_elem(item, "resprocessing")
     if resprocessing is not None:
-        for varequal in resprocessing.findall(".//varequal"):
+        for varequal in find_all(resprocessing, "varequal"):
             if varequal.text:
                 text = varequal.text.strip()
                 if text:
