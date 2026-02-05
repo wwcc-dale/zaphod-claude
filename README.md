@@ -72,6 +72,63 @@ See [05-QUICK-START.md](05-QUICK-START.md) for detailed setup instructions.
 
 ---
 
+## Import & Export - Closed-Loop System
+
+Zaphod provides complete bidirectional sync between Canvas and local files:
+
+### Export to Common Cartridge
+
+```bash
+# Export current course
+zaphod export
+
+# Auto-export after each sync
+zaphod sync --export
+zaphod sync --watch --export
+
+# Offline export (no Canvas needed)
+zaphod export --offline
+```
+
+Exports are saved to `_course_metadata/exports/` with timestamps:
+```
+20260204_153045_export.imscc
+```
+
+### Import from Canvas
+
+Download existing Canvas courses as local markdown:
+
+```bash
+# Import by course ID
+zaphod import 12345 --output ./my-course
+
+# HTML is automatically converted to Markdown
+# Rubrics are converted to YAML
+# Module structure is preserved
+```
+
+### Import from Cartridge
+
+Import IMSCC Common Cartridge files:
+
+```bash
+# Import any .imscc file
+zaphod import course.imscc --output ./imported-course
+```
+
+### Use Cases
+
+- **Course Migration:** Move courses between Canvas instances
+- **Backups:** Automated versioned backups
+- **Templates:** Create reusable course templates
+- **Collaboration:** Share courses via version control
+- **Round-Trip:** Export → Edit → Import → Sync
+
+See [user-guide/14-import-export.md](zaphod/user-guide/14-import-export.md) for complete documentation.
+
+---
+
 ## Directory Structure
 
 ```
@@ -129,9 +186,11 @@ zaphod validate                # Check for issues
 # Information
 zaphod info                    # Course status and stats
 
-# Export
+# Export & Import
 zaphod export                  # Export to Common Cartridge
 zaphod export --output my.imscc
+zaphod import 12345            # Import from Canvas by ID
+zaphod import course.imscc     # Import from cartridge file
 ```
 
 ---
