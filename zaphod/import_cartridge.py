@@ -36,6 +36,7 @@ Options:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import html
 import json
 import os
@@ -147,6 +148,7 @@ class CartridgeImport:
     question_banks: List[QuestionBankItem] = field(default_factory=list)
     modules: List[ModuleItem] = field(default_factory=list)
     assets: Dict[str, str] = field(default_factory=dict)  # Map source -> dest
+    shared_rubrics: Dict[str, Dict[str, Any]] = field(default_factory=dict)  # Map rubric_name -> rubric_data
 
 
 # ============================================================================
@@ -1032,8 +1034,16 @@ def write_content_item(item: ContentItem, output_dir: Path):
 
     # Write rubric if present
     if item.rubric:
-        rubric_path = folder_path / "rubric.yaml"
-        rubric_path.write_text(yaml.dump(item.rubric, sort_keys=False), encoding="utf-8")
+        # Check if it's a reference to a shared rubric
+        if "reference" in item.rubric:
+            # Just store the reference in a comment
+            rubric_ref = item.rubric["reference"]
+            rubric_path = folder_path / "rubric.yaml"
+            rubric_path.write_text(f"# Reference to shared rubric\nreference: {rubric_ref}\n", encoding="utf-8")
+        else:
+            # Inline rubric
+            rubric_path = folder_path / "rubric.yaml"
+            rubric_path.write_text(yaml.dump(item.rubric, sort_keys=False), encoding="utf-8")
 
     print(f"[import] Created {item.item_type}: {folder_path.name}")
 
@@ -1156,6 +1166,20 @@ def write_quiz(quiz: QuizItem, output_dir: Path):
     print(f"[import] Created quiz: {filename} ({len(quiz.questions)} questions)")
 
 
+def write_shared_rubrics(shared_rubrics: Dict[str, Dict[str, Any]], output_dir: Path):
+    """Write shared rubrics to the rubrics/ directory."""
+    if not shared_rubrics:
+        return
+
+    rubrics_dir = output_dir / "rubrics"
+    rubrics_dir.mkdir(parents=True, exist_ok=True)
+
+    for rubric_name, rubric_data in shared_rubrics.items():
+        rubric_path = rubrics_dir / f"{rubric_name}.yaml"
+        rubric_path.write_text(yaml.dump(rubric_data, sort_keys=False), encoding="utf-8")
+        print(f"[import] Created shared rubric: {rubric_name}.yaml")
+
+
 def copy_assets(assets: Dict[str, str], output_dir: Path):
     """Copy asset files to the assets directory."""
     if not assets:
@@ -1199,6 +1223,50 @@ def sanitize_filename(name: str) -> str:
     return name or "untitled"
 
 
+def rubric_hash(rubric: Dict[str, Any]) -> str:
+    """Generate a hash for a rubric to detect duplicates."""
+    # Create a stable string representation
+    rubric_str = json.dumps(rubric, sort_keys=True)
+    return hashlib.md5(rubric_str.encode()).hexdigest()[:12]
+
+
+def extract_shared_rubrics(cartridge: CartridgeImport) -> None:
+    """
+    Detect and extract shared rubrics from assignments.
+
+    Rubrics that appear multiple times (identical content) are extracted
+    to the shared_rubrics collection and replaced with references.
+    """
+    # Count rubric occurrences by hash
+    rubric_usage: Dict[str, List[ContentItem]] = {}
+
+    for item in cartridge.content_items:
+        if item.rubric and item.item_type == "assignment":
+            rhash = rubric_hash(item.rubric)
+            if rhash not in rubric_usage:
+                rubric_usage[rhash] = []
+            rubric_usage[rhash].append(item)
+
+    # Extract rubrics used by multiple assignments
+    for rhash, items in rubric_usage.items():
+        if len(items) > 1:  # Used by multiple assignments
+            # Use first item's rubric as the canonical version
+            rubric = items[0].rubric
+
+            # Generate a shared rubric name
+            rubric_title = rubric.get("title", "Shared Rubric")
+            rubric_name = f"shared-rubric-{rhash}"
+
+            # Store in shared collection
+            cartridge.shared_rubrics[rubric_name] = rubric
+
+            # Replace inline rubrics with references
+            for item in items:
+                item.rubric = {"reference": rubric_name}
+
+            print(f"[import] Extracted shared rubric: {rubric_title} (used by {len(items)} assignments)")
+
+
 # ============================================================================
 # Import Orchestration
 # ============================================================================
@@ -1238,11 +1306,16 @@ def import_cartridge(
         print("[import] Processing resources...")
         cartridge = process_resources(resources, modules, temp_dir)
 
+        # Extract shared rubrics
+        print("[import] Analyzing rubrics...")
+        extract_shared_rubrics(cartridge)
+
         if dry_run:
             print("\n[import] DRY RUN - No files written")
             print(f"[import] Would create {len(cartridge.content_items)} content items")
             print(f"[import] Would create {len(cartridge.question_banks)} question banks")
             print(f"[import] Would create {len(cartridge.quizzes)} quizzes")
+            print(f"[import] Would create {len(cartridge.shared_rubrics)} shared rubrics")
             print(f"[import] Would copy {len(cartridge.assets)} assets")
             return
 
@@ -1261,6 +1334,11 @@ def import_cartridge(
         for quiz in cartridge.quizzes:
             write_quiz(quiz, output_dir)
 
+        # Write shared rubrics
+        if cartridge.shared_rubrics:
+            print("\n[import] Writing shared rubrics...")
+            write_shared_rubrics(cartridge.shared_rubrics, output_dir)
+
         # Copy assets
         print("\n[import] Copying assets...")
         copy_assets(cartridge.assets, output_dir)
@@ -1269,6 +1347,8 @@ def import_cartridge(
         print(f"[import]   {len(cartridge.content_items)} content items")
         print(f"[import]   {len(cartridge.question_banks)} question banks")
         print(f"[import]   {len(cartridge.quizzes)} quizzes")
+        if cartridge.shared_rubrics:
+            print(f"[import]   {len(cartridge.shared_rubrics)} shared rubrics")
         print(f"[import]   {len(cartridge.assets)} assets")
 
     finally:
