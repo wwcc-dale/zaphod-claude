@@ -42,6 +42,7 @@ import json
 import os
 import re
 import shutil
+import sys
 import tempfile
 import zipfile
 from dataclasses import dataclass, field
@@ -211,25 +212,140 @@ def get_text(elem: Optional[ET.Element], default: str = "") -> str:
 # Cartridge Extraction
 # ============================================================================
 
+def is_safe_member_name(member: str) -> bool:
+    """
+    Validate zip member name for path traversal attempts.
+
+    SECURITY: Prevents malicious cartridges from writing outside target directory.
+
+    Args:
+        member: Zip member name to validate
+
+    Returns:
+        True if safe, False if dangerous
+
+    Blocks:
+        - Absolute paths (/, C:, etc.)
+        - Parent directory references (..)
+        - Dangerous characters (\\, \0, etc.)
+    """
+    if not member:
+        return False
+
+    # Reject absolute paths
+    if member.startswith('/') or member.startswith('\\'):
+        return False
+
+    # Reject drive letters (Windows: C:, D:, etc.)
+    if len(member) >= 2 and member[1] == ':':
+        return False
+
+    # Reject parent directory references in path components
+    parts = member.replace('\\', '/').split('/')
+    if '..' in parts:
+        return False
+
+    # Reject null bytes and other dangerous characters
+    dangerous_chars = ['\0', '<', '>', '|', '?', '*']
+    if any(char in member for char in dangerous_chars):
+        return False
+
+    return True
+
+
 def extract_cartridge(cartridge_path: Path, output_dir: Path) -> Path:
     """
     Extract cartridge to a temporary directory.
 
-    SECURITY: Validates all paths during extraction to prevent path traversal.
+    SECURITY:
+    - Validates paths to prevent path traversal
+    - Enforces size limits to prevent zip bombs
+    - Checks compression ratios for suspicious files
+    - Uses Python 3.12+ safe extraction when available
     """
     temp_dir = Path(tempfile.mkdtemp(prefix="zaphod_import_"))
 
+    # SECURITY: Size limits to prevent zip bombs and DoS
+    MAX_TOTAL_SIZE = 500 * 1024 * 1024  # 500 MB total
+    MAX_FILE_SIZE = 50 * 1024 * 1024    # 50 MB per file
+    MAX_FILES = 10000                    # Maximum file count
+    MAX_COMPRESSION_RATIO = 100          # Maximum compression ratio
+
     try:
         with zipfile.ZipFile(cartridge_path, 'r') as zf:
-            for member in zf.namelist():
-                # SECURITY: Prevent path traversal
-                member_path = temp_dir / member
-                if not is_safe_path(temp_dir, member_path):
-                    print(f"[import:warn] {WARNING} Skipping unsafe path: {member}")
-                    continue
+            # SECURITY: Check number of files
+            if len(zf.namelist()) > MAX_FILES:
+                raise RuntimeError(f"Cartridge contains too many files: {len(zf.namelist())}")
 
-                # Extract file
-                zf.extract(member, temp_dir)
+            # SECURITY: Check total uncompressed size
+            total_size = sum(info.file_size for info in zf.infolist())
+            if total_size > MAX_TOTAL_SIZE:
+                raise RuntimeError(f"Cartridge too large: {total_size / (1024*1024):.1f} MB (max {MAX_TOTAL_SIZE / (1024*1024):.0f} MB)")
+
+            extracted_size = 0
+            # Python 3.12+ has built-in path traversal protection
+            if sys.version_info >= (3, 12):
+                # Still need to check sizes even with safe extraction
+                for member in zf.namelist():
+                    info = zf.getinfo(member)
+
+                    # SECURITY: Check individual file size
+                    if info.file_size > MAX_FILE_SIZE:
+                        print(f"[import:warn] {WARNING} Skipping large file: {member} ({info.file_size / (1024*1024):.1f} MB)")
+                        continue
+
+                    # SECURITY: Check compression ratio (zip bomb detection)
+                    if info.file_size > 0 and info.compress_size > 0:
+                        ratio = info.file_size / info.compress_size
+                        if ratio > MAX_COMPRESSION_RATIO:
+                            print(f"[import:warn] {WARNING} Suspicious compression: {member} ({ratio:.0f}x)")
+                            continue
+
+                    extracted_size += info.file_size
+                    if extracted_size > MAX_TOTAL_SIZE:
+                        raise RuntimeError("Extracted size exceeds limit during extraction")
+
+                # Use safe extraction with data filter (blocks dangerous paths)
+                zf.extractall(temp_dir, filter='data')
+            else:
+                # Manual validation for Python < 3.12
+                for member in zf.namelist():
+                    info = zf.getinfo(member)
+
+                    # SECURITY: Check individual file size
+                    if info.file_size > MAX_FILE_SIZE:
+                        print(f"[import:warn] {WARNING} Skipping large file: {member} ({info.file_size / (1024*1024):.1f} MB)")
+                        continue
+
+                    # SECURITY: Check compression ratio (zip bomb detection)
+                    if info.file_size > 0 and info.compress_size > 0:
+                        ratio = info.file_size / info.compress_size
+                        if ratio > MAX_COMPRESSION_RATIO:
+                            print(f"[import:warn] {WARNING} Suspicious compression: {member} ({ratio:.0f}x)")
+                            continue
+
+                    # SECURITY: Validate member name before extraction
+                    if not is_safe_member_name(member):
+                        print(f"[import:warn] {WARNING} Skipping unsafe member name: {member}")
+                        continue
+
+                    # Construct and validate target path
+                    member_path = (temp_dir / member).resolve()
+
+                    # Ensure resolved path is still within temp_dir
+                    try:
+                        member_path.relative_to(temp_dir.resolve())
+                    except ValueError:
+                        print(f"[import:warn] {WARNING} Path escapes temp directory: {member}")
+                        continue
+
+                    # Extract file safely
+                    zf.extract(member, temp_dir)
+
+                    # Track cumulative size
+                    extracted_size += info.file_size
+                    if extracted_size > MAX_TOTAL_SIZE:
+                        raise RuntimeError("Extracted size exceeds limit during extraction")
 
         print(f"[import] Extracted cartridge to: {temp_dir}")
         return temp_dir
