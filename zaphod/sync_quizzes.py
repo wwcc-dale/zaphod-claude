@@ -78,6 +78,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional, Dict, Any, Tuple
 
+import markdown
 import requests
 import yaml
 from canvasapi import Canvas
@@ -838,9 +839,15 @@ def create_canvas_quiz(
     existing_quiz = existing_quizzes.get(quiz_folder.name)
     
     # Build quiz parameters
+    # Convert description from markdown to HTML
+    description_html = markdown.markdown(
+        quiz_folder.description,
+        extensions=['tables', 'fenced_code', 'codehilite', 'toc', 'nl2br']
+    ) if quiz_folder.description else ""
+
     quiz_params: Dict[str, Any] = {
         "title": quiz_folder.name,
-        "description": quiz_folder.description,
+        "description": description_html,
         "quiz_type": quiz_folder.meta.get("quiz_type", "assignment"),
         "published": bool(quiz_folder.meta.get("published", False)),
         "shuffle_answers": bool(quiz_folder.meta.get("shuffle_answers", True)),

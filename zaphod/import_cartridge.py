@@ -55,10 +55,10 @@ from defusedxml import ElementTree as DefusedET
 
 import yaml
 import frontmatter
-from markdownify import markdownify as md
 
 from zaphod.security_utils import is_safe_path
 from zaphod.icons import SUCCESS, WARNING, ERROR
+from zaphod.html_to_markdown import convert_canvas_html_to_markdown
 
 
 # ============================================================================
@@ -283,31 +283,40 @@ def extract_cartridge(cartridge_path: Path, output_dir: Path) -> Path:
                 raise RuntimeError(f"Cartridge too large: {total_size / (1024*1024):.1f} MB (max {MAX_TOTAL_SIZE / (1024*1024):.0f} MB)")
 
             extracted_size = 0
-            # Python 3.12+ has built-in path traversal protection
-            if sys.version_info >= (3, 12):
-                # Still need to check sizes even with safe extraction
-                for member in zf.namelist():
-                    info = zf.getinfo(member)
 
-                    # SECURITY: Check individual file size
-                    if info.file_size > MAX_FILE_SIZE:
-                        print(f"[import:warn] {WARNING} Skipping large file: {member} ({info.file_size / (1024*1024):.1f} MB)")
-                        continue
+            # Try Python 3.12+ safe extraction first, fall back to manual validation
+            use_filter = False
+            try:
+                # Test if filter parameter is supported
+                if sys.version_info >= (3, 12):
+                    # Still need to check sizes even with safe extraction
+                    for member in zf.namelist():
+                        info = zf.getinfo(member)
 
-                    # SECURITY: Check compression ratio (zip bomb detection)
-                    if info.file_size > 0 and info.compress_size > 0:
-                        ratio = info.file_size / info.compress_size
-                        if ratio > MAX_COMPRESSION_RATIO:
-                            print(f"[import:warn] {WARNING} Suspicious compression: {member} ({ratio:.0f}x)")
+                        # SECURITY: Check individual file size
+                        if info.file_size > MAX_FILE_SIZE:
+                            print(f"[import:warn] {WARNING} Skipping large file: {member} ({info.file_size / (1024*1024):.1f} MB)")
                             continue
 
-                    extracted_size += info.file_size
-                    if extracted_size > MAX_TOTAL_SIZE:
-                        raise RuntimeError("Extracted size exceeds limit during extraction")
+                        # SECURITY: Check compression ratio (zip bomb detection)
+                        if info.file_size > 0 and info.compress_size > 0:
+                            ratio = info.file_size / info.compress_size
+                            if ratio > MAX_COMPRESSION_RATIO:
+                                print(f"[import:warn] {WARNING} Suspicious compression: {member} ({ratio:.0f}x)")
+                                continue
 
-                # Use safe extraction with data filter (blocks dangerous paths)
-                zf.extractall(temp_dir, filter='data')
-            else:
+                        extracted_size += info.file_size
+                        if extracted_size > MAX_TOTAL_SIZE:
+                            raise RuntimeError("Extracted size exceeds limit during extraction")
+
+                    # Use safe extraction with data filter (blocks dangerous paths)
+                    zf.extractall(temp_dir, filter='data')
+                    use_filter = True
+            except TypeError:
+                # filter parameter not supported, fall back to manual validation
+                pass
+
+            if not use_filter:
                 # Manual validation for Python < 3.12
                 for member in zf.namelist():
                     info = zf.getinfo(member)
@@ -886,26 +895,78 @@ def process_quiz(
 
         title = assessment_elem.get("title", resource.identifier)
 
+        # Extract quiz metadata from qtimetadata
+        metadata = {}
+        qtimetadata = assessment_elem.find(".//{http://www.imsglobal.org/xsd/ims_qtiasiv1p2}qtimetadata")
+        if qtimetadata is None:
+            qtimetadata = assessment_elem.find(".//qtimetadata")
+
+        if qtimetadata is not None:
+            for field in qtimetadata.findall(".//{http://www.imsglobal.org/xsd/ims_qtiasiv1p2}qtimetadatafield"):
+                if field is None:
+                    for field in qtimetadata.findall(".//qtimetadatafield"):
+                        label_elem = field.find("fieldlabel")
+                        entry_elem = field.find("fieldentry")
+                        if label_elem is not None and entry_elem is not None:
+                            label = label_elem.text
+                            entry = entry_elem.text
+                            if label and entry:
+                                metadata[label] = entry
+                else:
+                    label_elem = field.find("{http://www.imsglobal.org/xsd/ims_qtiasiv1p2}fieldlabel")
+                    entry_elem = field.find("{http://www.imsglobal.org/xsd/ims_qtiasiv1p2}fieldentry")
+                    if label_elem is None:
+                        label_elem = field.find("fieldlabel")
+                    if entry_elem is None:
+                        entry_elem = field.find("fieldentry")
+                    if label_elem is not None and entry_elem is not None:
+                        label = label_elem.text
+                        entry = entry_elem.text
+                        if label and entry:
+                            metadata[label] = entry
+
+        # Extract quiz description from objectives element
+        description = ""
+        objectives = assessment_elem.find(".//{http://www.imsglobal.org/xsd/ims_qtiasiv1p2}objectives")
+        if objectives is None:
+            objectives = assessment_elem.find(".//objectives")
+
+        if objectives is not None:
+            mattext = objectives.find(".//{http://www.imsglobal.org/xsd/ims_qtiasiv1p2}mattext")
+            if mattext is None:
+                mattext = objectives.find(".//mattext")
+            if mattext is not None and mattext.text:
+                # Convert HTML back to markdown
+                description_html = mattext.text
+                description = html_to_markdown(description_html)
+
         # Extract questions
         questions = parse_qti_questions(root)
 
-        # Determine if this is a question bank or a quiz
-        if is_question_bank(resource, title):
+        # Determine if this is a question bank or a content quiz with inline questions
+        is_inline_quiz = metadata.get("zaphod_inline_questions") == "True"
+
+        if is_inline_quiz or not is_question_bank(resource, title):
+            # This is a quiz in content (not a question bank)
+            quiz_item = QuizItem(
+                identifier=resource.identifier,
+                title=title,
+                questions=questions,
+                metadata=metadata,
+                module_path=module_path,
+                position=position,
+            )
+            # Store description in metadata for later use
+            if description:
+                quiz_item.metadata['description'] = description
+            return quiz_item, None
+        else:
             # This is a question bank
             return None, QuestionBankItem(
                 identifier=resource.identifier,
                 title=title,
                 questions=questions,
             )
-        else:
-            # This is a quiz
-            return QuizItem(
-                identifier=resource.identifier,
-                title=title,
-                questions=questions,
-                module_path=module_path,
-                position=position,
-            ), None
 
     except Exception as e:
         print(f"[import:warn] Failed to parse quiz {resource.identifier}: {e}")
@@ -1168,21 +1229,27 @@ def process_link(
 # ============================================================================
 
 def html_to_markdown(html_content: str) -> str:
-    """Convert HTML to Markdown."""
+    """Convert HTML to Markdown using Zaphod's optimized converter."""
     if not html_content or not html_content.strip():
         return ""
 
     # Clean up HTML
     html_content = html_content.strip()
 
-    # Convert to markdown
+    # Preprocess: Convert code blocks with language hints to data attributes
+    # This helps preserve language identifiers through the conversion
+    html_content = preserve_code_language_hints(html_content)
+
+    # Convert to markdown using Zaphod's html2text-based converter
     try:
-        markdown_text = md(
+        markdown_text, _ = convert_canvas_html_to_markdown(
             html_content,
-            heading_style="ATX",
-            bullets="-",
-            strip=['script', 'style'],
+            strip_template=False,  # Don't strip templates during import
+            course_root=None       # No course root during import
         )
+
+        # Post-process: Convert html2text's [code]...[/code] to fenced blocks
+        markdown_text = convert_code_tags_to_fences(markdown_text)
 
         # Clean up extra whitespace
         markdown_text = re.sub(r'\n{3,}', '\n\n', markdown_text)
@@ -1192,7 +1259,68 @@ def html_to_markdown(html_content: str) -> str:
 
     except Exception as e:
         print(f"[import:warn] Failed to convert HTML to Markdown: {e}")
+        # Return original HTML as fallback
         return html_content
+
+
+def convert_code_tags_to_fences(markdown_text: str) -> str:
+    """
+    Convert html2text's [code]...[/code] tags to fenced code blocks.
+
+    html2text outputs code blocks as [code]...[/code], but we want
+    standard markdown fenced code blocks (```).
+    """
+    # Pattern to match [code]...[/code] blocks
+    pattern = r'\[code\](.*?)\[/code\]'
+
+    def replace_with_fence(match):
+        code = match.group(1)
+        # Remove leading/trailing whitespace but preserve internal formatting
+        code = code.strip()
+        return f'```\n{code}\n```'
+
+    markdown_text = re.sub(pattern, replace_with_fence, markdown_text, flags=re.DOTALL)
+
+    return markdown_text
+
+
+def preserve_code_language_hints(html_content: str) -> str:
+    """
+    Preprocess HTML to preserve code block language hints.
+
+    Converts <pre><code class="language-python"> to fenced code blocks
+    before markdown conversion.
+    """
+    # Pattern 1: language-python (CommonMark/Canvas standard)
+    pattern1 = r'<pre[^>]*>\s*<code\s+class="[^"]*language-(\w+)[^"]*"[^>]*>(.*?)</code>\s*</pre>'
+
+    # Pattern 2: Just class="python" (alternative format)
+    pattern2 = r'<pre[^>]*>\s*<code\s+class="(\w+)"[^>]*>(.*?)</code>\s*</pre>'
+
+    # Pattern 3: Canvas codehilite format
+    pattern3 = r'<div\s+class="codehilite"[^>]*>\s*<pre[^>]*><code[^>]*>(.*?)</code></pre>\s*</div>'
+
+    def replace_code_block(match):
+        if len(match.groups()) >= 2:
+            language = match.group(1)
+            code = match.group(2)
+        else:
+            language = ""
+            code = match.group(1)
+        # Decode HTML entities
+        code = html.unescape(code)
+        # Return as markdown fenced code block
+        if language and language not in ['codehilite', 'highlight']:
+            return f'```{language}\n{code}\n```'
+        else:
+            return f'```\n{code}\n```'
+
+    # Try all patterns
+    html_content = re.sub(pattern1, replace_code_block, html_content, flags=re.DOTALL)
+    html_content = re.sub(pattern2, replace_code_block, html_content, flags=re.DOTALL)
+    html_content = re.sub(pattern3, replace_code_block, html_content, flags=re.DOTALL)
+
+    return html_content
 
 
 def strip_html_tags(html_text: str) -> str:
@@ -1337,22 +1465,67 @@ def write_question_bank(bank: QuestionBankItem, output_dir: Path):
 
 def write_quiz(quiz: QuizItem, output_dir: Path):
     """Write a quiz to the file system."""
-    question_banks_dir = output_dir / "question-banks"
-    question_banks_dir.mkdir(parents=True, exist_ok=True)
+    # Check if this is an inline quiz (should go in content/) or a question bank
+    is_inline = quiz.metadata.get("zaphod_inline_questions") == "True"
 
-    # Generate quiz file
-    filename = f"{sanitize_filename(quiz.title)}.quiz.txt"
-    quiz_path = question_banks_dir / filename
+    if is_inline:
+        # Write as .quiz/ folder in content directory
+        content_dir = output_dir / "content"
+
+        # Determine module path
+        if quiz.module_path:
+            module_dir = content_dir / quiz.module_path
+        else:
+            module_dir = content_dir / f"{str(quiz.position).zfill(2)}-module.module"
+
+        module_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create quiz folder
+        quiz_folder_name = f"{sanitize_filename(quiz.title)}.quiz"
+        quiz_folder = module_dir / quiz_folder_name
+        quiz_folder.mkdir(parents=True, exist_ok=True)
+        quiz_path = quiz_folder / "index.md"
+    else:
+        # Write as .quiz.txt file in question-banks
+        question_banks_dir = output_dir / "question-banks"
+        question_banks_dir.mkdir(parents=True, exist_ok=True)
+        filename = f"{sanitize_filename(quiz.title)}.quiz.txt"
+        quiz_path = question_banks_dir / filename
 
     # Build quiz content
     lines = []
 
-    # Frontmatter
+    # Frontmatter with all metadata
     lines.append("---")
     lines.append(f"title: {quiz.title}")
-    lines.append("points_per_question: 1.0")
+
+    # Add Zaphod-specific metadata if present
+    if quiz.metadata.get("zaphod_points_possible"):
+        lines.append(f"points_possible: {quiz.metadata['zaphod_points_possible']}")
+    if quiz.metadata.get("qmd_timelimit"):
+        lines.append(f"time_limit: {quiz.metadata['qmd_timelimit']}")
+    if quiz.metadata.get("zaphod_quiz_type"):
+        lines.append(f"quiz_type: {quiz.metadata['zaphod_quiz_type']}")
+    if quiz.metadata.get("zaphod_allowed_attempts"):
+        lines.append(f"allowed_attempts: {quiz.metadata['zaphod_allowed_attempts']}")
+    if quiz.metadata.get("zaphod_shuffle_answers"):
+        lines.append(f"shuffle_answers: {quiz.metadata['zaphod_shuffle_answers']}")
+    if quiz.metadata.get("zaphod_published"):
+        lines.append(f"published: {quiz.metadata['zaphod_published']}")
+    if is_inline:
+        lines.append(f"inline_questions: true")
+
+    # Default points_per_question for question banks
+    if not is_inline:
+        lines.append("points_per_question: 1.0")
+
     lines.append("---")
     lines.append("")
+
+    # Add description if present
+    if quiz.metadata.get("description"):
+        lines.append(quiz.metadata["description"])
+        lines.append("")
 
     # Questions
     for q in quiz.questions:
@@ -1391,7 +1564,11 @@ def write_quiz(quiz: QuizItem, output_dir: Path):
             lines.append("")
 
     quiz_path.write_text("\n".join(lines), encoding="utf-8")
-    print(f"[import] Created quiz: {filename} ({len(quiz.questions)} questions)")
+
+    if is_inline:
+        print(f"[import] Created inline quiz: {quiz_folder_name} ({len(quiz.questions)} questions)")
+    else:
+        print(f"[import] Created question bank: {filename} ({len(quiz.questions)} questions)")
 
 
 def write_shared_rubrics(shared_rubrics: Dict[str, Dict[str, Any]], output_dir: Path):

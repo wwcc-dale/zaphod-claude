@@ -11,7 +11,6 @@ zaphod/publish_all.py
 zaphod/scaffold_course.py
 zaphod/sync_clo_via_csv.py
 zaphod/sync_modules.py
-zaphod/sync_quiz_banks.py
 zaphod/sync_rubrics.py
 zaphod/watch_and_publish.py
 zaphod.egg-info/PKG-INFO

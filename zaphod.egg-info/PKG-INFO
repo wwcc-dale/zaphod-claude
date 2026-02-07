@@ -9,6 +9,7 @@ Requires-Dist: PyYAML>=6.0
 Requires-Dist: python-frontmatter>=1.0.0
 Requires-Dist: Markdown>=3.4.0
 Requires-Dist: watchdog>=3.0.0
+Requires-Dist: defusedxml>=0.7.1
 Provides-Extra: dev
 Requires-Dist: pytest>=7.4.0; extra == "dev"
 Requires-Dist: pytest-cov>=4.1.0; extra == "dev"

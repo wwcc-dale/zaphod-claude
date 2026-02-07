@@ -140,7 +140,7 @@ def apply_templates(source_markdown: str, course_root: Path, meta: Dict[str, Any
         # No templates - just convert markdown to HTML
         return markdown.markdown(
             source_markdown,
-            extensions=['tables', 'fenced_code', 'codehilite', 'toc', 'nl2br']
+            extensions=['extra', 'codehilite', 'toc', 'nl2br']
         )
 
     # Default to "default" template set
@@ -154,7 +154,7 @@ def apply_templates(source_markdown: str, course_root: Path, meta: Dict[str, Any
     if not any(templates.values()):
         return markdown.markdown(
             source_markdown,
-            extensions=['tables', 'fenced_code', 'codehilite', 'toc', 'nl2br']
+            extensions=['extra', 'codehilite', 'toc', 'nl2br']
         )
 
     # STEP 1: Combine all MARKDOWN first (before HTML conversion)

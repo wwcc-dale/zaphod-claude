@@ -71,6 +71,7 @@ AUTO_WORK_FILES = {
     "extra_styled_source.html",
     "result.html",
     "source.md",
+    "meta.json",  # Derived from index.md, cleaned up after use
 }
 
 

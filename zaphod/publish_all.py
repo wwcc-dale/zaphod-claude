@@ -23,6 +23,7 @@ import hashlib
 from zaphod.canvas_client import make_canvas_api_obj, get_canvas_base_url
 from zaphod.canvas_publish import make_zaphod_obj, ZaphodPage, ZaphodAssignment
 from zaphod.config_utils import get_course_id
+from zaphod.asset_registry import AssetRegistry
 from zaphod.errors import (
     media_file_not_found_error,
     CanvasAPIError,
@@ -138,22 +139,25 @@ def iter_changed_content_dirs(changed_files: list[Path]):
 VIDEO_RE = re.compile(r"\{\{video:\s*\"?([^}\"]+?)\"?\s*\}\}")
 
 
-def get_or_upload_video_file(course, folder: Path, filename: str, cache: dict):
+def get_or_upload_video_file(course, folder: Path, filename: str, cache: dict, registry: AssetRegistry = None):
     """
     Return a canvasapi File object for `filename` in this course.
     First tries cache/Canvas, then looks locally using find_local_asset.
-    
+
     Uses content-hash caching to handle file updates properly.
-    
+
     Supports:
     - Simple filename: {{video:intro.mp4}}
     - Explicit path: {{video:videos/intro.mp4}} or {{video:../assets/videos/intro.mp4}}
+
+    Args:
+        registry: Optional AssetRegistry to track uploads
     """
     clean_name = Path(filename).name
-    
+
     # Find the local file first to get content hash
     local_path = find_local_asset(folder, filename)
-    
+
     if local_path:
         # Use content hash for cache key (handles updates)
         content_hash = hashlib.md5(local_path.read_bytes()).hexdigest()[:12]
@@ -190,7 +194,7 @@ def get_or_upload_video_file(course, folder: Path, filename: str, cache: dict):
                 },
                 cause=e
             )
-        
+
         # Build list of searched paths for error message
         searched_paths = [folder / clean_name]
         if ASSETS_DIR.exists():
@@ -233,29 +237,43 @@ def get_or_upload_video_file(course, folder: Path, filename: str, cache: dict):
         )
 
     cache[cache_key] = file_id
+    canvas_file = course.get_file(file_id)
+
+    # Track in registry if provided
+    if registry and local_path:
+        registry.track_upload(
+            local_path=local_path,
+            canvas_file_id=file_id,
+            canvas_url=canvas_file.url,
+            file_size=local_path.stat().st_size
+        )
+
     print(f"[upload] Uploaded {clean_name} (id={file_id}, hash={content_hash})")
-    return course.get_file(file_id)
+    return canvas_file
 
 
-def replace_video_placeholders(text: str, course, folder: Path, canvas_base_url: str, cache: dict) -> str:
+def replace_video_placeholders(text: str, course, folder: Path, canvas_base_url: str, cache: dict, registry: AssetRegistry = None) -> str:
     """
     Replace {{video:filename}} with Canvas media-attachment iframe.
-    
+
     Includes data-zaphod-video attribute for round-trip preservation.
+
+    Args:
+        registry: Optional AssetRegistry to track uploads
     """
     def replace(match):
         original_token = match.group(0)  # e.g., {{video:"intro.mp4"}}
         raw = match.group(1).strip()     # e.g., intro.mp4
-        
+
         try:
-            f = get_or_upload_video_file(course, folder, raw, cache)
+            f = get_or_upload_video_file(course, folder, raw, cache, registry)
         except Exception as e:
             print(f"[publish:warn] {folder.name}: video '{raw}': {e}")
             return original_token  # Leave placeholder if upload fails
 
         # Canvas media iframe URL
         src = f"{canvas_base_url}/media_attachments_iframe/{f.id}"
-        
+
         # Escape the original token for HTML attribute
         escaped_token = original_token.replace('"', '&quot;')
 
@@ -401,14 +419,17 @@ def find_local_asset(folder: Path, filename: str) -> Path | None:
     return None
 
 
-def get_or_upload_local_asset(course, folder: Path, filename: str, cache: dict) -> str | None:
+def get_or_upload_local_asset(course, folder: Path, filename: str, cache: dict, registry: AssetRegistry = None) -> str | None:
     """
     Upload a local asset to Canvas and return its download URL.
-    
+
     Uses content hash in cache key to handle:
     - Same filename in different locations (assets/ vs page folder)
     - Updated files with the same name
-    
+
+    Args:
+        registry: Optional AssetRegistry to track uploads
+
     Returns:
         Canvas file download URL, or None if file not found/upload failed
     """
@@ -417,14 +438,14 @@ def get_or_upload_local_asset(course, folder: Path, filename: str, cache: dict) 
     if not local_path:
         print(f"[assets:warn] Local asset not found: {filename}")
         return None
-    
+
     actual_filename = local_path.name
-    
+
     # Use content hash to uniquely identify files
     # This handles same filename in different locations + file updates
     content_hash = hashlib.md5(local_path.read_bytes()).hexdigest()[:12]
     cache_key = f"{course.id}:{actual_filename}:{content_hash}"
-    
+
     # Check cache first
     if cache_key in cache:
         try:
@@ -435,10 +456,10 @@ def get_or_upload_local_asset(course, folder: Path, filename: str, cache: dict) 
         except Exception as e:
             print(f"[assets:warn] Cached file {actual_filename} not found, re-uploading: {e}")
             del cache[cache_key]
-    
+
     # Note: We skip searching Canvas by filename since content hash means
     # we want this specific version of the file. If hash changed, re-upload.
-    
+
     # Upload the file
     print(f"[assets] Uploading {actual_filename} from {local_path.parent.name}/...")
     try:
@@ -446,49 +467,62 @@ def get_or_upload_local_asset(course, folder: Path, filename: str, cache: dict) 
         if not success:
             print(f"[assets:err] Upload failed for {actual_filename}: {resp}")
             return None
-        
+
         file_id = resp.get("id")
         if not file_id:
             print(f"[assets:err] No file ID returned for {actual_filename}")
             return None
-        
+
         cache[cache_key] = file_id
         canvas_file = course.get_file(file_id)
+
+        # Track in registry if provided
+        if registry and local_path:
+            registry.track_upload(
+                local_path=local_path,
+                canvas_file_id=file_id,
+                canvas_url=canvas_file.url,
+                file_size=local_path.stat().st_size
+            )
+
         print(f"[assets] Uploaded {actual_filename} (id={file_id}, hash={content_hash})")
         return canvas_file.url
-        
+
     except Exception as e:
         print(f"[assets:err] Error uploading {actual_filename}: {e}")
         return None
 
 
-def replace_local_asset_references(text: str, course, folder: Path, cache: dict) -> str:
+def replace_local_asset_references(text: str, course, folder: Path, cache: dict, registry: AssetRegistry = None) -> str:
     """
     Find local asset references in markdown/HTML and replace with Canvas URLs.
-    
+
     Handles:
     - Markdown images: ![alt](local.png)
     - Markdown links: [text](document.pdf)
     - HTML img tags: <img src="local.png">
     - HTML anchor tags: <a href="document.pdf">
-    
+
     Only processes references that:
     - Are not URLs (http://, https://, //)
     - Have recognized asset extensions
     - Can be found locally (in folder or assets/)
+
+    Args:
+        registry: Optional AssetRegistry to track uploads
     """
     # Track which files we've processed to avoid duplicate uploads
     processed_files: dict[str, str] = {}  # original_ref -> canvas_url
-    
+
     def get_canvas_url(original_ref: str) -> str | None:
         """Get Canvas URL for a reference, using cache to avoid re-processing."""
         if original_ref in processed_files:
             return processed_files[original_ref]
-        
+
         if not is_local_asset_reference(original_ref):
             return None
-        
-        canvas_url = get_or_upload_local_asset(course, folder, original_ref, cache)
+
+        canvas_url = get_or_upload_local_asset(course, folder, original_ref, cache, registry)
         if canvas_url:
             processed_files[original_ref] = canvas_url
         return canvas_url
@@ -588,13 +622,13 @@ def find_all_asset_files() -> list[Path]:
     return asset_files
 
 
-def upload_file_to_canvas(course, file_path: Path, cache: dict):
+def upload_file_to_canvas(course, file_path: Path, cache: dict, registry: AssetRegistry = None):
     """Upload a file to Canvas, using content-hash cache to avoid re-uploads."""
     filename = file_path.name
-    
+
     if not file_path.is_file():
         raise FileNotFoundError(f"File not found: {file_path}")
-    
+
     # Use content hash for cache key
     content_hash = hashlib.md5(file_path.read_bytes()).hexdigest()[:12]
     cache_key = f"{course.id}:{filename}:{content_hash}"
@@ -616,11 +650,22 @@ def upload_file_to_canvas(course, file_path: Path, cache: dict):
         raise RuntimeError(f"No file id in upload response for {file_path}")
 
     cache[cache_key] = file_id
+    canvas_file = course.get_file(file_id)
+
+    # Track in registry if provided
+    if registry:
+        registry.track_upload(
+            local_path=file_path,
+            canvas_file_id=file_id,
+            canvas_url=canvas_file.url,
+            file_size=file_path.stat().st_size
+        )
+
     print(f"[upload] Uploaded {filename} (id={file_id}, hash={content_hash})")
-    return course.get_file(file_id)
+    return canvas_file
 
 
-def bulk_upload_assets(course, cache: dict):
+def bulk_upload_assets(course, cache: dict, registry: AssetRegistry = None):
     """Bulk upload all asset files."""
     fence("Uploading Assets")
 
@@ -653,7 +698,7 @@ def bulk_upload_assets(course, cache: dict):
                 skipped += 1
                 continue
 
-            upload_file_to_canvas(course, file_path, cache)
+            upload_file_to_canvas(course, file_path, cache, registry)
             uploaded += 1
         except Exception as e:
             failed += 1
@@ -703,15 +748,16 @@ def main():
     else:
         print(f"Publishing to course: {course.name} (ID {course_id})")
 
-    # Load upload cache
+    # Load upload cache and asset registry
     cache = load_upload_cache()
+    registry = AssetRegistry(COURSE_ROOT)
 
     # Handle assets-only mode
     if args.assets_only:
         if args.dry_run:
             print("(dry-run) Would upload assets")
         else:
-            bulk_upload_assets(course, cache)
+            bulk_upload_assets(course, cache, registry)
         return
 
     # Determine which content to publish
@@ -734,31 +780,35 @@ def main():
         try:
             # Create Zaphod content object
             obj = make_zaphod_obj(d)
-            
+
             if args.dry_run:
                 print(f"{d.name} ({type(obj).__name__}, dry-run)")
                 continue
-            
+
             print(f"{d.name} ({type(obj).__name__})")
 
             # For Pages and Assignments: process placeholders and local assets
+            # Transform in memory only - DO NOT write back to source.md
+            transformed_markdown = None
             if isinstance(obj, (ZaphodPage, ZaphodAssignment)):
                 source_md = d / "source.md"
                 if source_md.is_file():
                     text = source_md.read_text(encoding="utf-8")
-                    
-                    # 1. Replace {{video:...}} placeholders
-                    text = replace_video_placeholders(text, course, d, canvas_base_url, cache)
-                    
-                    # 2. Upload and rewrite local asset references (images, PDFs, etc.)
-                    text = replace_local_asset_references(text, course, d, cache)
-                    
-                    source_md.write_text(text, encoding="utf-8")
-                    
-                    # Reload the object so it picks up the modified source
-                    obj = make_zaphod_obj(d)
 
-            # Publish to Canvas
+                    # 1. Replace {{video:...}} placeholders and track in registry
+                    text = replace_video_placeholders(text, course, d, canvas_base_url, cache, registry)
+
+                    # 2. Upload and replace local asset references, track in registry
+                    text = replace_local_asset_references(text, course, d, cache, registry)
+
+                    # Store transformed markdown (DO NOT write to source.md)
+                    transformed_markdown = text
+
+            # Publish to Canvas with transformed markdown
+            if transformed_markdown and isinstance(obj, (ZaphodPage, ZaphodAssignment)):
+                # Set the transformed markdown on the object
+                obj.source_md = transformed_markdown
+
             obj.publish(course, overwrite=True)
             print(f"{SUCCESS} {d.name}")
 
@@ -769,9 +819,11 @@ def main():
 
         print()  # Blank line after each item
 
-    # Save cache (skip in dry-run mode)
+    # Save cache and registry (skip in dry-run mode)
     if not args.dry_run:
         save_upload_cache(cache)
+        registry.save()
+        registry.print_stats()
         fence("Complete")
         print(f"{SUCCESS} Done.")
     else:

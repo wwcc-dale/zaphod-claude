@@ -49,17 +49,8 @@ from zaphod.icons import (
     PAGE, ASSIGNMENT, QUIZ, MODULE, OUTCOME, DOWNLOAD, FOLDER
 )
 
-# Try to import HTML conversion library
-try:
-    import html2text
-    HTML2TEXT_AVAILABLE = True
-except ImportError:
-    HTML2TEXT_AVAILABLE = False
-    try:
-        import markdownify
-        MARKDOWNIFY_AVAILABLE = True
-    except ImportError:
-        MARKDOWNIFY_AVAILABLE = False
+# Import required HTML conversion library
+import html2text
 
 
 # =============================================================================
@@ -68,9 +59,7 @@ except ImportError:
 
 def html_to_markdown(html_content: str) -> str:
     """
-    Convert Canvas HTML to markdown.
-
-    Uses html2text (preferred) or markdownify (fallback).
+    Convert Canvas HTML to markdown using html2text.
 
     Args:
         html_content: HTML string from Canvas
@@ -81,19 +70,12 @@ def html_to_markdown(html_content: str) -> str:
     if not html_content:
         return ""
 
-    if HTML2TEXT_AVAILABLE:
-        h = html2text.HTML2Text()
-        h.body_width = 0  # Don't wrap lines
-        h.unicode_snob = True
-        h.mark_code = True
-        h.wrap_links = False
-        return h.handle(html_content).strip()
-    elif MARKDOWNIFY_AVAILABLE:
-        import markdownify
-        return markdownify.markdownify(html_content, heading_style="ATX").strip()
-    else:
-        # Last resort: return HTML with warning comment
-        return f"<!-- WARNING: Install html2text or markdownify for proper conversion -->\n\n{html_content}"
+    h = html2text.HTML2Text()
+    h.body_width = 0  # Don't wrap lines
+    h.unicode_snob = True
+    h.mark_code = True
+    h.wrap_links = False
+    return h.handle(html_content).strip()
 
 
 # =============================================================================
@@ -625,12 +607,6 @@ def import_canvas_course(
         skip_quizzes: If True, skip quiz import
     """
     fence("Canvas Course Import")
-
-    # Check for HTML conversion library
-    if not HTML2TEXT_AVAILABLE and not MARKDOWNIFY_AVAILABLE:
-        print(f"{WARNING} Neither html2text nor markdownify is installed.")
-        print(f"{INFO} HTML content will be preserved as-is.")
-        print(f"{INFO} Install with: pip install html2text")
         print()
 
     # Connect to Canvas

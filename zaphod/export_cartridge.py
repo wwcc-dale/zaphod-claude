@@ -124,6 +124,7 @@ class QuizItem:
     file_path: Path
     meta: Dict[str, Any]
     questions: List[Dict[str, Any]] = field(default_factory=list)
+    description: str = ""
 
 
 @dataclass
@@ -240,9 +241,12 @@ def load_content_item(folder: Path, item_type: str) -> Optional[ContentItem]:
         except Exception as e:
             print(f"[cartridge:warn] Failed to parse {index_path}: {e}")
 
-    if not meta and meta_path.is_file():
+    # Always merge meta.json if it exists (contains 'name' and other inferred fields)
+    if meta_path.is_file():
         try:
-            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            meta_json = json.loads(meta_path.read_text(encoding="utf-8"))
+            # Merge: meta.json provides base, frontmatter overrides
+            meta = {**meta_json, **meta}
         except Exception as e:
             print(f"[cartridge:warn] Failed to load {meta_path}: {e}")
 
@@ -256,7 +260,7 @@ def load_content_item(folder: Path, item_type: str) -> Optional[ContentItem]:
     # Convert markdown to HTML
     source_html = markdown.markdown(
         source_content,
-        extensions=['tables', 'fenced_code', 'codehilite']
+        extensions=['extra', 'codehilite']
     )
 
     # Load rubric if present (for assignments)
@@ -345,6 +349,10 @@ def load_quiz(quiz_file: Path) -> Optional[QuizItem]:
     try:
         raw = quiz_file.read_text(encoding="utf-8")
         meta, body = split_quiz_frontmatter(raw)
+
+        # Extract description (text before first numbered question)
+        description = extract_quiz_description(body)
+
         questions = parse_quiz_questions(body, meta.get("points_per_question", 1.0))
 
         return QuizItem(
@@ -353,10 +361,34 @@ def load_quiz(quiz_file: Path) -> Optional[QuizItem]:
             file_path=quiz_file,
             meta=meta,
             questions=questions,
+            description=description,
         )
     except Exception as e:
         print(f"[cartridge:warn] Failed to parse quiz {quiz_file}: {e}")
         return None
+
+
+def extract_quiz_description(body: str) -> str:
+    """
+    Extract quiz description/instructions (text before first numbered question).
+
+    Args:
+        body: Quiz body content after frontmatter
+
+    Returns:
+        Description text, or empty string if none
+    """
+    lines = body.splitlines()
+    description_lines = []
+
+    for line in lines:
+        # Stop at first numbered question (e.g., "1. Question text")
+        if re.match(r'^\s*\d+\.\s+', line):
+            break
+        description_lines.append(line)
+
+    description = "\n".join(description_lines).strip()
+    return description
 
 
 def split_quiz_frontmatter(raw: str) -> Tuple[Dict[str, Any], str]:
@@ -637,8 +669,34 @@ def generate_qti_assessment(quiz: QuizItem) -> str:
     add_qti_metadata(qtimetadata, "cc_profile", "cc.exam.v0p1")
     add_qti_metadata(qtimetadata, "qmd_assessmenttype", "Examination")
 
+    # Standard QTI metadata
     if quiz.meta.get("time_limit"):
         add_qti_metadata(qtimetadata, "qmd_timelimit", str(quiz.meta["time_limit"]))
+
+    # Zaphod-specific metadata (for round-trip fidelity)
+    if quiz.meta.get("quiz_type"):
+        add_qti_metadata(qtimetadata, "zaphod_quiz_type", str(quiz.meta["quiz_type"]))
+    if quiz.meta.get("inline_questions") is not None:
+        add_qti_metadata(qtimetadata, "zaphod_inline_questions", str(quiz.meta["inline_questions"]))
+    if quiz.meta.get("points_possible"):
+        add_qti_metadata(qtimetadata, "zaphod_points_possible", str(quiz.meta["points_possible"]))
+    if quiz.meta.get("allowed_attempts"):
+        add_qti_metadata(qtimetadata, "zaphod_allowed_attempts", str(quiz.meta["allowed_attempts"]))
+    if quiz.meta.get("shuffle_answers") is not None:
+        add_qti_metadata(qtimetadata, "zaphod_shuffle_answers", str(quiz.meta["shuffle_answers"]))
+    if quiz.meta.get("published") is not None:
+        add_qti_metadata(qtimetadata, "zaphod_published", str(quiz.meta["published"]))
+
+    # Add quiz description/objectives if present
+    if quiz.description:
+        objectives = ET.SubElement(assessment, "objectives")
+        material = ET.SubElement(objectives, "material")
+        mattext = ET.SubElement(material, "mattext")
+        mattext.set("texttype", "text/html")
+        # Convert markdown to HTML for description
+        import markdown
+        description_html = markdown.markdown(quiz.description, extensions=['extra', 'codehilite'])
+        mattext.text = description_html
 
     # Section containing all items
     section = ET.SubElement(assessment, "section")
