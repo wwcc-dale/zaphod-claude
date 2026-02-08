@@ -671,6 +671,12 @@ def import_canvas_course(
             except Exception as e:
                 print(f"{ERROR} Failed to create quiz '{quiz.title}': {e}")
 
+    # Post-processing: extract shared rubric rows to rubrics/rows/
+    from zaphod.rubric_dedup import deduplicate_rubric_rows
+    n_rows = deduplicate_rubric_rows(output_dir)
+    if n_rows > 0:
+        print(f"\n{SUCCESS} Extracted {n_rows} shared rubric row(s) to rubrics/rows/")
+
     # Summary
     fence("Import Complete")
     print(f"{SUCCESS} Course imported successfully!")

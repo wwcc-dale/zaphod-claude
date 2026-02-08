@@ -1748,6 +1748,12 @@ def import_cartridge(
         print("\n[import] Copying assets...")
         copy_assets(cartridge.assets, output_dir)
 
+        # Post-processing: extract shared rubric rows to rubrics/rows/
+        from zaphod.rubric_dedup import deduplicate_rubric_rows
+        n_rows = deduplicate_rubric_rows(output_dir)
+        if n_rows > 0:
+            print(f"[import] {SUCCESS} Extracted {n_rows} shared rubric row(s) to rubrics/rows/")
+
         print(f"\n[import] {SUCCESS} Import complete!")
         print(f"[import]   {len(cartridge.content_items)} content items")
         print(f"[import]   {len(cartridge.question_banks)} question banks")
