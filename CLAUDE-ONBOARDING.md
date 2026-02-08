@@ -128,6 +128,10 @@ course/
 - **`config_utils.py`** - Configuration loading (zaphod.yaml, env vars)
 - **`html_to_markdown.py`** - HTML → Markdown conversion for imports
 - **`path_utils.py`** - Path resolution and validation
+- **`errors.py`** - Custom exception classes with rich error messages
+- **`icons.py`** - Centralized CLI icons/emoji constants
+- **`scaffold_course.py`** - Course directory scaffolding (`zaphod init`)
+- **`validate.py`** - Pre-sync validation (`zaphod validate`)
 
 ---
 
@@ -774,6 +778,15 @@ zaphod import course.imscc           # Import from cartridge
 → Read `import_from_canvas.py` (Canvas API downloading)
 → Read `html_to_markdown.py` (HTML conversion)
 
+### To understand course init / scaffolding:
+→ Read `scaffold_course.py`
+
+### To understand validation:
+→ Read `validate.py`
+
+### To understand error messages:
+→ Read `errors.py` (all custom exception classes)
+
 ### To understand security:
 → Read `security_utils.py` (path validation, SSRF protection)
 → Read `99-SECURITY-AUDIT-V2.md` (comprehensive audit)
@@ -826,26 +839,37 @@ zaphod import course.imscc           # Import from cartridge
     ├── watch_and_publish.py            # Watch mode
     ├── frontmatter_to_meta.py          # Parsing
     ├── publish_all.py                  # Publishing
-    ├── sync_*.py                       # Specialized syncs
-    ├── prune_*.py                      # Cleanup
+    ├── sync_*.py                       # Specialized syncs (banks, quizzes, modules, rubrics, clo)
+    ├── prune_*.py                      # Cleanup (canvas_content, quizzes)
     ├── export_cartridge.py             # IMSCC export
-    ├── import_*.py                     # Import features
+    ├── import_*.py                     # Import features (cartridge, from_canvas)
+    ├── scaffold_course.py              # zaphod init scaffolding
+    ├── validate.py                     # zaphod validate
     ├── asset_registry.py               # URL tracking
     ├── video_transcode.py              # Pre-upload transcoding
     ├── canvas_client.py                # API client
     ├── security_utils.py               # Security functions
-    ├── config_utils.py                 # Config loading
+    ├── config_utils.py                 # Config loading (zaphod.yaml)
+    ├── errors.py                       # Custom exceptions
+    ├── icons.py                        # CLI output icons
+    ├── 00-README.md                    # Internal doc index
     ├── 01-ARCHITECTURE.md              # Architecture docs
     ├── 02-DECISIONS.md                 # Design decisions
+    ├── 03-GLOSSARY.md                  # Term definitions
     ├── 04-KNOWN-ISSUES.md              # Known issues
+    ├── 05-QUICK-START.md               # Quick start for devs
+    ├── 06-IDEAS.md                     # Future ideas
+    ├── 07-TODO.md                      # Pending work
+    ├── 08-DEPRECATED.md                # Removed features
     ├── 99-SECURITY-AUDIT-V2.md         # Security audit
     └── user-guide/                     # User documentation
         ├── 00-overview.md
-        ├── 08-assets.md                # Assets + video quality
-        ├── 10-pipeline.md              # Sync pipeline
-        ├── 12-cli-reference.md         # CLI + zaphod.yaml ref
-        ├── 14-import-export.md         # Import/export
-        ├── 15-asset-registry.md        # Asset Registry
+        ├── 08-assets.md                # Assets + video quality presets
+        ├── 10-pipeline.md              # Sync pipeline (all 11 steps)
+        ├── 12-cli-reference.md         # CLI + zaphod.yaml config ref
+        ├── 14-import-export.md         # Import/export + round-trip
+        ├── 15-asset-registry.md        # Asset Registry reference
+        ├── 15-file-layout.md           # Course directory layout
         └── 16-asset-workflow.md        # Asset workflow guide
 ```
 
