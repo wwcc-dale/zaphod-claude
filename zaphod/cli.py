@@ -1055,6 +1055,39 @@ def import_course(ctx: ZaphodContext, source: str, output: Optional[str]):
 
 
 # ============================================================================
+# Content Deduplication
+# ============================================================================
+
+@cli.command('suggest-includes')
+@click.option('--course-dir', '-d', type=click.Path(exists=True, file_okay=False, path_type=Path),
+              help='Course root directory (default: cwd)')
+@click.pass_obj
+def suggest_includes(ctx: ZaphodContext, course_dir: Optional[Path]):
+    """
+    Find repeated prose blocks that could become shared includes
+
+    Scans pages and assignments for paragraph-level text that appears
+    verbatim in multiple files. Reports candidates for extraction to
+    shared/<slug>.md without modifying any files.
+
+    Thresholds:
+      - 200+ chars appearing in 3+ files
+      - 400+ chars appearing in 2+ files
+
+    Examples:
+        zaphod suggest-includes
+        zaphod suggest-includes --course-dir ./my-course
+    """
+    target = course_dir or ctx.course_root
+    try:
+        from content_dedup import suggest_shared_includes
+    except ImportError:
+        ctx.run_script("content_dedup.py", args=["--course-dir", str(target)])
+        return
+    suggest_shared_includes(target)
+
+
+# ============================================================================
 # UI Server
 # ============================================================================
 
