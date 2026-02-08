@@ -183,33 +183,7 @@ This creates a dedicated file item in Canvas that students can download.
 
 ## Asset Organization
 
-### Recommended Structure
-
-```
-assets/
-├── images/
-│   ├── diagrams/
-│   ├── photos/
-│   └── icons/
-├── documents/
-│   ├── handouts/
-│   └── templates/
-├── videos/
-│   ├── lectures/
-│   └── tutorials/
-└── data/
-    └── datasets/
-```
-
-### Flat Structure (Also Fine)
-
-```
-assets/
-├── logo.png
-├── syllabus.pdf
-├── lecture1.mp4
-└── dataset.csv
-```
+For organizational strategies (hybrid, centralized, media-type), see [Asset Workflow Guide](16-asset-workflow.md).
 
 ---
 

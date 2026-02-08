@@ -24,8 +24,8 @@ The Asset Registry identifies files by their **content** (not filename or locati
 
 ```
 Example:
-  pages/page1.page/logo.png     ← School logo (hash: abc123)
-  pages/page2.page/logo.png     ← Same logo (hash: abc123)
+  content/page1.page/logo.png     ← School logo (hash: abc123)
+  content/page2.page/logo.png     ← Same logo (hash: abc123)
   assets/images/logo.png        ← Same logo (hash: abc123)
 
   Result: One upload to Canvas, all three references work!
@@ -46,7 +46,7 @@ Example:
 
 **Setup:**
 ```
-pages/
+content/
   chapter1.page/
     index.md         → ![Campus Photo](campus.jpg)
     campus.jpg       ← Photo of library
@@ -75,7 +75,7 @@ pages/
 
 **Setup:**
 ```
-pages/
+content/
   welcome.page/
     index.md         → ![Logo](logo.png)
     logo.png         ← School logo
@@ -103,7 +103,7 @@ assets/
 
 **Setup:**
 ```
-pages/
+content/
   chapter1.page/
     index.md         → ![Screenshot](screenshot.png)
     screenshot.png   ← Chapter 1 interface
@@ -160,10 +160,10 @@ When you reference a file, Zaphod searches in this order:
 
 ### 1. Content Folder Itself
 ```markdown
-<!-- pages/welcome.page/index.md -->
+<!-- content/welcome.page/index.md -->
 ![Logo](logo.png)
 ```
-Looks for: `pages/welcome.page/logo.png` ← **Found first**
+Looks for: `content/welcome.page/logo.png` ← **Found first**
 
 ### 2. Explicit Relative Path
 ```markdown
@@ -213,7 +213,7 @@ my-course/
     css/
       custom-styles.css         ← Global styling
 
-  pages/
+  content/
     01-welcome.module/
       01-welcome.page/
         index.md
@@ -264,7 +264,7 @@ my-course/
     documents/
       syllabus.pdf
 
-  pages/
+  content/
     01-welcome.module/
       01-welcome.page/
         index.md    ← All references to ../../assets/
@@ -326,7 +326,7 @@ assets/
 
 **Phase 1: Initial Creation (Fast & Easy)**
 ```
-pages/
+content/
   my-first-page.page/
     index.md
     photo1.jpg        ← Drop files here while drafting
@@ -357,8 +357,8 @@ After creating several pages, notice patterns:
 ```bash
 # Move shared assets to assets/
 mkdir -p assets/images
-mv pages/page1.page/school-logo.png assets/images/
-mv pages/page2.page/school-logo.png assets/images/  # Duplicate, will merge
+mv content/page1.page/school-logo.png assets/images/
+mv content/page2.page/school-logo.png assets/images/  # Duplicate, will merge
 ```
 
 **Phase 4: Update References**
@@ -399,7 +399,7 @@ cp ~/documents/syllabus.pdf assets/documents/
 
 **Phase 3: Create Pages with References**
 ```markdown
-<!-- pages/welcome.page/index.md -->
+<!-- content/welcome.page/index.md -->
 # Welcome to Biology 101
 
 ![University Logo](../../assets/images/university-logo.png)
@@ -419,7 +419,7 @@ zaphod sync
 **Phase 5: Add Page-Specific Content**
 ```bash
 # Add unique diagrams to individual pages
-cp ~/diagrams/cell-diagram.png pages/chapter-1.page/
+cp ~/diagrams/cell-diagram.png content/chapter-1.page/
 ```
 
 ```markdown
@@ -472,7 +472,7 @@ assets/
 **A: No problem! Registry handles it automatically.**
 
 ```
-pages/
+content/
   page1.page/logo.png    ← Same file
   page2.page/logo.png    ← Same file
   page3.page/logo.png    ← Same file
@@ -488,7 +488,7 @@ pages/
 **A: Yes! Registry doesn't care about organization.**
 
 ```
-pages/
+content/
   module-1/
     page1.page/
       diagram.png         ← Page-specific
@@ -507,11 +507,11 @@ assets/
 
 ```bash
 # Before
-pages/welcome.page/logo.png
+content/welcome.page/logo.png
 # Reference: ![Logo](logo.png)
 
 # Move to assets
-mv pages/welcome.page/logo.png assets/images/
+mv content/welcome.page/logo.png assets/images/
 
 # Update reference
 # Old: ![Logo](logo.png)
@@ -544,7 +544,7 @@ zaphod sync
 **A: Registry tracks both separately.**
 
 ```
-pages/
+content/
   chapter1.page/screenshot.png   ← Different content
   chapter2.page/screenshot.png   ← Different content
 ```
@@ -578,165 +578,7 @@ Each course still uploads to its own Canvas instance.
 
 ---
 
-## File Types Supported
-
-### Images
-```
-.png, .jpg, .jpeg, .gif, .svg, .bmp, .webp, .ico, .tiff
-```
-
-**Usage:**
-```markdown
-![Description](image.png)
-```
-
-### Videos
-```
-.mp4, .mov, .avi, .webm, .mkv, .m4v, .flv, .wmv
-```
-
-**Usage:**
-```markdown
-{{video:lecture.mp4}}
-```
-
-### Documents
-```
-.pdf, .doc, .docx, .txt, .rtf, .odt
-```
-
-**Usage:**
-```markdown
-[Download Handout](handout.pdf)
-```
-
-### Spreadsheets
-```
-.xls, .xlsx, .csv, .ods
-```
-
-### Presentations
-```
-.ppt, .pptx, .odp
-```
-
-### Audio
-```
-.mp3, .wav, .ogg, .m4a, .flac
-```
-
-### Archives
-```
-.zip, .tar, .gz, .rar, .7z
-```
-
-### Other
-```
-.json, .xml, .yaml, .yml, .html, .htm
-```
-
----
-
-## Troubleshooting
-
-### File Not Found
-
-**Error:**
-```
-[assets:warn] Local asset not found: photo.jpg
-```
-
-**Solutions:**
-
-1. **Check filename (case-sensitive on Linux/macOS)**
-   ```
-   ✗ Photo.jpg vs photo.jpg
-   ✓ Exact match required
-   ```
-
-2. **Check file location**
-   ```bash
-   # Is the file where you think it is?
-   ls pages/my-page.page/
-   ls assets/images/
-   ```
-
-3. **Use explicit path**
-   ```markdown
-   <!-- Instead of auto-discovery -->
-   ![Photo](photo.jpg)
-
-   <!-- Use explicit path -->
-   ![Photo](../../assets/images/photo.jpg)
-   ```
-
-### Ambiguous Filename
-
-**Warning:**
-```
-[assets:warn] Multiple files named 'diagram.png' found:
-        - assets/chapter1/diagram.png
-        - assets/chapter2/diagram.png
-        Use explicit path, e.g., ../assets/chapter1/diagram.png
-```
-
-**Solution: Use explicit path**
-```markdown
-<!-- Ambiguous (multiple files) -->
-![Diagram](diagram.png)
-
-<!-- Explicit (unambiguous) -->
-![Diagram](../../assets/chapter1/diagram.png)
-```
-
-### Asset Not Updating in Canvas
-
-**Problem:** Changed file locally but Canvas still shows old version
-
-**Cause:** Browser cache or Canvas cache
-
-**Solutions:**
-
-1. **Hard refresh browser**
-   - Chrome/Firefox: Ctrl+Shift+R (Windows) or Cmd+Shift+R (Mac)
-   - Clears browser cache
-
-2. **Check if file actually changed**
-   ```bash
-   # Verify file was modified
-   ls -lh assets/images/banner.jpg
-   # Check modification time
-   ```
-
-3. **Verify sync happened**
-   ```bash
-   zaphod sync
-   # Look for upload message
-   # [upload] Uploaded banner.jpg (id=456, hash=abc123)
-   ```
-
-4. **Check registry**
-   ```bash
-   cat _course_metadata/asset_registry.json | grep banner.jpg
-   # Verify latest hash is present
-   ```
-
-### Canvas Shows Broken Image
-
-**Problem:** Image reference in Canvas but shows broken
-
-**Cause:** File was deleted from Canvas or permissions changed
-
-**Solution:**
-```bash
-# Clear caches to force re-upload
-rm _course_metadata/upload_cache.json
-rm _course_metadata/asset_registry.json
-
-# Re-sync
-zaphod sync
-# Files will be re-uploaded
-```
+For troubleshooting asset issues, see [Assets](08-assets.md#troubleshooting).
 
 ---
 
@@ -748,17 +590,17 @@ If your source.md files contain Canvas URLs from before the registry:
 
 ```bash
 # Find files with Canvas URLs
-grep -r "canvas.instructure.com/files" pages/*/source.md
+grep -r "canvas.instructure.com/files" content/*/source.md
 ```
 
 ### Option 1: Revert with Git
 
 ```bash
 # Find commit before Canvas URL pollution
-git log --all -- "pages/*/source.md" | grep -B5 "before sync"
+git log --all -- "content/*/source.md" | grep -B5 "before sync"
 
 # Revert to clean state
-git checkout <commit-hash> -- pages/
+git checkout <commit-hash> -- content/
 
 # Clear caches
 rm _course_metadata/upload_cache.json
@@ -817,7 +659,7 @@ my-course/
       # Course videos, demos, lectures
     documents/
       # PDFs, handouts, templates
-  pages/
+  content/
     module-name.module/
       page-name.page/
         index.md
