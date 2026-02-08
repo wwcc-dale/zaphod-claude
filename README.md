@@ -85,9 +85,6 @@ zaphod export
 # Auto-export after each sync
 zaphod sync --export
 zaphod sync --watch --export
-
-# Offline export (no Canvas needed)
-zaphod export --offline
 ```
 
 Exports are saved to `_course_metadata/exports/` with timestamps:
@@ -134,7 +131,7 @@ See [user-guide/14-import-export.md](zaphod/user-guide/14-import-export.md) for 
 ```
 my-course/
 ├── zaphod.yaml                 # Course config (course_id)
-├── pages/                      # All content lives here
+├── content/                    # All content lives here
 │   ├── 01-Getting Started.module/
 │   │   ├── 01-welcome.page/
 │   │   │   └── index.md
@@ -151,6 +148,8 @@ my-course/
 ├── assets/
 │   ├── images/
 │   └── videos/
+├── shared/                     # Variables and includes
+│   └── variables.yaml
 ├── outcomes/
 │   └── outcomes.yaml
 ├── modules/
@@ -256,7 +255,7 @@ Instructions for the quiz.
 Zaphod automatically organizes content into Canvas modules based on folder structure:
 
 ```
-pages/
+content/
 ├── 01-Introduction.module/     # → Module "Introduction" (position 1)
 │   ├── 01-welcome.page/        # → First item in module
 │   └── 02-overview.page/       # → Second item
@@ -293,7 +292,7 @@ Share content blocks:
 # In your page:
 {{include:late_policy}}
 
-# Pulls from includes/late_policy.md
+# Pulls from shared/late_policy.md
 ```
 
 ---

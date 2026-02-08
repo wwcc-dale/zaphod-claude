@@ -9,7 +9,7 @@
 Every page lives in its own folder with an `index.md` file:
 
 ```
-pages/
+content/
 └── my-first-page.page/
     └── index.md
 ```
@@ -102,7 +102,7 @@ modules:
 Put the page inside a `.module` folder:
 
 ```
-pages/
+content/
 └── 01-Start Here.module/
     └── syllabus.page/
         └── index.md        # Automatically in "Start Here" module
@@ -119,7 +119,7 @@ Pages appear in modules in a predictable order:
 ### Using Folder Prefixes
 
 ```
-pages/
+content/
 └── 01-Week 1.module/
     ├── 01-introduction.page/     # First
     ├── 02-concepts.page/         # Second
@@ -208,7 +208,7 @@ Put the image file in the same folder as your `index.md`, or in the `assets/` fo
 Put the image in the same folder:
 
 ```
-pages/
+content/
 └── welcome.page/
     ├── index.md
     └── welcome-banner.png     # Referenced as welcome-banner.png
@@ -227,7 +227,7 @@ For images used on multiple pages, put them in `assets/`:
 my-course/
 ├── assets/
 │   └── course-logo.png
-└── pages/
+└── content/
     └── welcome.page/
         └── index.md
 ```

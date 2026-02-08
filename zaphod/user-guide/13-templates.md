@@ -42,7 +42,7 @@ my-course/
 │   │   └── footer.html
 │   └── minimal/              # Another option
 │       └── footer.md
-├── pages/
+├── content/
 └── ...
 ```
 
@@ -220,19 +220,19 @@ minimal/
 ### Using in Pages
 
 ```yaml
-# pages/lesson.page/index.md
+# content/lesson.page/index.md
 ---
 name: "Regular Lesson"
 # Uses default template
 ---
 
-# pages/hackathon.page/index.md
+# content/hackathon.page/index.md
 ---
 name: "Hackathon Event"
 template: "fancy"        # Special styling
 ---
 
-# pages/reference.page/index.md
+# content/reference.page/index.md
 ---
 name: "API Reference"
 template: "minimal"      # Less clutter
@@ -279,7 +279,7 @@ Templates can use variables! Define once, use everywhere.
 ---
 ```
 
-**pages/lesson.page/index.md:**
+**content/lesson.page/index.md:**
 ```yaml
 ---
 name: "Lesson 1"

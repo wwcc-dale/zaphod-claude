@@ -220,8 +220,8 @@ Zaphod maintains backward compatibility with older folder names:
 
 | New (Preferred) | Legacy (Still Works) |
 |-----------------|---------------------|
-| `content/` | `pages/` |
-| `shared/` | `includes/` |
+| `content/` | `content/` |
+| `shared/` | `shared/` |
 | `Name.module/` | `module-Name/` |
 
 If both exist, Zaphod prefers the new names.

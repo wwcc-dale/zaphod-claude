@@ -9,7 +9,7 @@
 Assignments live in folders ending with `.assignment`:
 
 ```
-pages/
+content/
 └── essay-1.assignment/
     ├── index.md
     └── rubric.yaml      # Optional grading rubric

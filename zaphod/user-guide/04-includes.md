@@ -100,9 +100,9 @@ courses/
 ### 3. Legacy Locations (backward compatibility)
 
 For existing courses using older folder names:
-- `<course>/content/includes/name.md` (or `pages/includes/`)
-- `<course>/includes/name.md`
-- `_all_courses/includes/name.md`
+- `<course>/content/shared/name.md` (or `content/shared/`)
+- `<course>/shared/name.md`
+- `_all_courses/shared/name.md`
 
 ---
 

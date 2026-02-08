@@ -20,7 +20,7 @@ You can mix both approaches!
 Create folders ending in `.module` to automatically organize content:
 
 ```
-pages/
+content/
 ├── 01-Getting Started.module/
 │   ├── 01-welcome.page/
 │   │   └── index.md
@@ -55,7 +55,7 @@ pages/
 The older `module-Name/` format still works:
 
 ```
-pages/
+content/
 └── module-Week 1/
     └── intro.page/
 ```
@@ -91,7 +91,7 @@ modules:
 If you don't have a `module_order.yaml`, Zaphod infers order from folder prefixes:
 
 ```
-pages/
+content/
 ├── 01-Week 1.module/     → position 1
 ├── 02-Week 2.module/     → position 2
 ├── 05-Midterm.module/    → position 3 (gaps are okay)
@@ -199,7 +199,7 @@ Sometimes you want to keep a module even if it's temporarily empty. Two ways:
 Any `.module` folder is protected automatically:
 
 ```
-pages/
+content/
 └── 10-Final Project.module/    # Won't be deleted even if empty
 ```
 
@@ -224,7 +224,7 @@ modules:
 my-course/
 ├── modules/
 │   └── module_order.yaml
-└── pages/
+└── content/
     ├── 01-Start Here.module/
     │   ├── 01-welcome.page/
     │   ├── 02-syllabus.page/
@@ -273,7 +273,7 @@ modules:
 ### Weekly Structure
 
 ```
-pages/
+content/
 ├── 00-Course Info.module/
 ├── 01-Week 1.module/
 ├── 02-Week 2.module/
@@ -285,7 +285,7 @@ pages/
 ### Unit Structure
 
 ```
-pages/
+content/
 ├── 01-Unit 1 - Foundations.module/
 ├── 02-Unit 2 - Applications.module/
 ├── 03-Unit 3 - Advanced Topics.module/
@@ -295,7 +295,7 @@ pages/
 ### Topic Structure
 
 ```
-pages/
+content/
 ├── 01-Introduction.module/
 ├── 02-Core Concepts.module/
 ├── 03-Techniques.module/

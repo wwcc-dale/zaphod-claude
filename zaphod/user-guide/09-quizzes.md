@@ -9,7 +9,7 @@
 Zaphod uses a two-layer approach to quizzes:
 
 1. **Question Banks** — Pools of questions stored in `question-banks/`
-2. **Quizzes** — The actual quizzes students take, stored in `pages/` as `.quiz/` folders
+2. **Quizzes** — The actual quizzes students take, stored in `content/` as `.quiz/` folders
 
 You create questions in banks, then quizzes pull from those banks. This lets you:
 - Reuse questions across multiple quizzes
@@ -45,7 +45,7 @@ d) 6
 
 ### Step 2: Create a Quiz
 
-Create `pages/01-Week 1.module/quiz.quiz/index.md`:
+Create `content/01-Week 1.module/quiz.quiz/index.md`:
 
 ```markdown
 ---
@@ -207,7 +207,7 @@ Set in quiz frontmatter, not in the bank. Banks just store questions.
 Quizzes are content items, just like pages and assignments. They live in `.quiz/` folders:
 
 ```
-pages/
+content/
 └── 01-Week 1.module/
     └── weekly-quiz.quiz/
         └── index.md
@@ -368,7 +368,7 @@ d) git push
 Consider what each command does and when you might use each.
 ```
 
-### Quiz: `pages/01-Getting Started.module/git-quiz.quiz/index.md`
+### Quiz: `content/01-Getting Started.module/git-quiz.quiz/index.md`
 
 ```markdown
 ---

@@ -66,18 +66,18 @@ Want to copy a module to a new course? Just copy the folder. Want to use the sam
    API_URL = "https://canvas.youruniversity.edu"
    ```
 
-4. Create a `pages/` folder and start adding content!
+4. Create a `content/` folder and start adding content!
 
 ---
 
 ## How Content is Organized
 
-Everything lives in the `pages/` folder. Each piece of content is its own folder with an `index.md` file inside:
+Everything lives in the `content/` folder. Each piece of content is its own folder with an `index.md` file inside:
 
 ```
 my-course/
 ├── zaphod.yaml
-└── pages/
+└── content/
     ├── welcome.page/
     │   └── index.md          ← This becomes a Canvas Page
     ├── essay-1.assignment/
@@ -134,7 +134,7 @@ And your page appears in Canvas!
 You probably want your content organized into modules (like "Week 1", "Week 2", etc.). Zaphod makes this easy with special folder names:
 
 ```
-pages/
+content/
 ├── 01-Getting Started.module/
 │   ├── 01-welcome.page/
 │   │   └── index.md

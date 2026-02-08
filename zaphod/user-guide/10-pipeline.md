@@ -30,6 +30,14 @@ zaphod sync
     ├── 7. sync_rubrics.py          → Create/attach rubrics
     │
     └── 8. prune_canvas_content.py  → Clean up orphaned content
+
+zaphod sync --watch (additional steps)
+    │
+    ├── 9. prune_quizzes.py         → Remove orphaned quizzes
+    │
+    ├── 10. build_media_manifest.py → Track large media files
+    │
+    └── 11. export_cartridge.py     → Auto-export (if ZAPHOD_EXPORT_ON_SYNC=1)
 ```
 
 ---
@@ -49,12 +57,12 @@ zaphod sync
 
 **Input:**
 ```
-pages/welcome.page/index.md
+content/welcome.page/index.md
 ```
 
 **Output:**
 ```
-pages/welcome.page/
+content/welcome.page/
 ├── index.md      (unchanged)
 ├── meta.json     (generated metadata)
 └── source.md     (processed content)
@@ -100,7 +108,7 @@ pages/welcome.page/
 **Purpose:** Create quizzes from `.quiz` folders.
 
 **What it does:**
-1. Reads `pages/**/*.quiz/index.md`
+1. Reads `content/**/*.quiz/index.md`
 2. Creates Canvas quizzes
 3. Links question groups to banks (by bank_id)
 4. Handles inline questions if present
@@ -162,6 +170,54 @@ pages/welcome.page/
 **Safety:**
 - Protected modules (from `module_order.yaml` or `.module` folders) are not deleted
 - Use `--dry-run` to preview what would be deleted
+
+---
+
+## Additional Steps (Watch Mode Only)
+
+When running in watch mode (`zaphod sync --watch`), three additional steps run after the main pipeline:
+
+### Step 9: prune_quizzes.py
+
+**Purpose:** Remove orphaned quizzes from Canvas.
+
+**What it does:**
+1. Lists all quizzes in Canvas
+2. Compares with local `.quiz` folders
+3. Identifies quizzes that exist in Canvas but not locally
+4. Deletes orphaned quizzes (respects `ZAPHOD_PRUNE_APPLY` setting)
+
+**Note:** This step only runs in watch mode, not during regular `zaphod sync`.
+
+### Step 10: build_media_manifest.py
+
+**Purpose:** Track large media files for distributed storage.
+
+**What it does:**
+1. Scans `assets/` for large media files (.mp4, .mov, .avi, .webm, .mp3, etc.)
+2. Computes checksums for each file
+3. Creates/updates `_course_metadata/media_manifest.json`
+4. Enables the `zaphod hydrate` workflow for team collaboration
+
+**Why it runs:** Keeps manifest updated automatically in watch mode.
+
+### Step 11: export_cartridge.py (Optional)
+
+**Purpose:** Automatically export to Common Cartridge after each sync.
+
+**Trigger:** Only runs if `ZAPHOD_EXPORT_ON_SYNC=1` environment variable is set.
+
+**What it does:**
+1. Exports course to Common Cartridge (.imscc) format
+2. Saves to `_course_metadata/exports/` with timestamp
+3. Enables automatic backups during development
+
+**Usage:**
+```bash
+export ZAPHOD_EXPORT_ON_SYNC=1
+zaphod sync --watch
+# Now every sync automatically exports a cartridge
+```
 
 ---
 
