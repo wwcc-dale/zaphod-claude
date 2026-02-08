@@ -143,11 +143,11 @@ OUTCOMES_YAML = textwrap.dedent(
     """
 )
 
-DEFAULTS_JSON = textwrap.dedent(
+ZAPHOD_YAML = textwrap.dedent(
     """\
-    {
-      "course_id": "REPLACE_ME"
-    }
+    # Zaphod Course Configuration
+    # Set your Canvas course ID here (or pass --course-id to zaphod init)
+    course_id: REPLACE_ME
     """
 )
 
@@ -379,8 +379,8 @@ def main() -> None:
     # Outcomes
     write_file(OUTCOMES_DIR / "outcomes.yaml", OUTCOMES_YAML, force=args.force)
 
-    # Metadata defaults (never overwrite, to avoid clobbering course_id)
-    write_file(METADATA_DIR / "defaults.json", DEFAULTS_JSON, force=False)
+    # Course config (never overwrite, to avoid clobbering course_id)
+    write_file(COURSE_ROOT / "zaphod.yaml", ZAPHOD_YAML, force=False)
 
     # Sample question bank (new .bank.md format)
     write_file(QUESTION_BANKS_DIR / "sample.bank.md", QUIZ_SAMPLE_BANK, force=args.force)
