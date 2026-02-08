@@ -50,7 +50,7 @@ zaphod init [--course-id ID] [--force]
 **What it creates:**
 ```
 my-course/
-├── pages/                  # Content folders
+├── content/                  # Content folders
 │   ├── welcome.page/
 │   └── sample-assignment.assignment/
 ├── assets/                 # Shared media
@@ -86,7 +86,7 @@ zaphod init --force
 Sync local content to Canvas.
 
 ```bash
-zaphod sync [--watch] [--course-id ID] [--dry-run] [--no-prune] [--assets-only]
+zaphod sync [--watch] [--course-id ID] [--dry-run] [--no-prune] [--assets-only] [--export]
 ```
 
 **Options:**
@@ -95,6 +95,7 @@ zaphod sync [--watch] [--course-id ID] [--dry-run] [--no-prune] [--assets-only]
 - `--dry-run, -n` — Preview changes without making them
 - `--no-prune` — Skip the cleanup step
 - `--assets-only` — Only upload media files
+- `--export` — Export to Common Cartridge after sync completes
 
 **Pipeline steps:**
 1. Process frontmatter from index.md files
@@ -309,7 +310,7 @@ zaphod export [--output FILE] [--title TITLE] [--format FORMAT]
 **Options:**
 - `--output, -o FILE` — Output file path
 - `--title, -t TITLE` — Course title
-- `--format FORMAT` — Export format: `cartridge` (default) or `qti`
+- `--format FORMAT` — Export format: `cartridge` (default). Note: `qti` format is not yet implemented
 
 **Examples:**
 ```bash
@@ -365,6 +366,41 @@ zaphod ui [--port PORT] [--no-browser]
 - `--no-browser` — Don't open browser automatically
 
 **Note:** The web UI is not yet fully implemented.
+
+---
+
+## zaphod.yaml Configuration
+
+Place `zaphod.yaml` in your course root directory:
+
+```yaml
+# Canvas connection
+course_id: 12345
+credential_file: ~/.canvas/credentials.txt
+
+# Video transcoding (optional, requires ffmpeg + ffmpeg-python)
+video_quality: medium       # low | medium | high | original
+
+# Prune settings
+prune:
+  apply: true
+  assignments: true
+
+# Watch mode
+watch:
+  debounce: 2.0
+```
+
+| Key | Values | Description |
+|-----|--------|-------------|
+| `course_id` | integer | Canvas course ID |
+| `credential_file` | path | Path to credentials file |
+| `api_url` | URL | Canvas instance URL (inline credentials) |
+| `api_key` | string | Canvas API token (inline credentials) |
+| `video_quality` | `low` / `medium` / `high` / `original` | Pre-upload video transcoding preset |
+| `prune.apply` | `true` / `false` | Whether to delete orphaned Canvas content |
+| `prune.assignments` | `true` / `false` | Include assignments in pruning |
+| `watch.debounce` | seconds | Delay before syncing after a file change |
 
 ---
 

@@ -75,6 +75,9 @@ class ZaphodConfig:
     # Watch settings
     watch_debounce: float = 2.0
     
+    # Video transcoding
+    video_quality: Optional[str] = None  # low | medium | high | original
+
     # Paths (resolved at load time)
     course_root: Optional[Path] = None
     
@@ -172,6 +175,7 @@ class ConfigLoader:
             "replacements": "replacements",
             "style": "style",
             "markdown_extensions": "markdown_extensions",
+            "video_quality": "video_quality",
         }
         
         for yaml_key, attr in mappings.items():
@@ -200,8 +204,9 @@ class ConfigLoader:
                 self.config._sources["watch_debounce"] = source_name
         
         # Store any extra settings
-        known_keys = {"course_id", "course_name", "api_url", "api_key", "credential_file", 
-                      "replacements", "style", "markdown_extensions", "prune", "watch"}
+        known_keys = {"course_id", "course_name", "api_url", "api_key", "credential_file",
+                      "replacements", "style", "markdown_extensions", "video_quality",
+                      "prune", "watch"}
         for key, value in data.items():
             if key not in known_keys:
                 self.config.extra[key] = value

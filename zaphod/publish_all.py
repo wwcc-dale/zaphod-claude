@@ -22,8 +22,9 @@ import hashlib
 # Zaphod modules
 from zaphod.canvas_client import make_canvas_api_obj, get_canvas_base_url
 from zaphod.canvas_publish import make_zaphod_obj, ZaphodPage, ZaphodAssignment
-from zaphod.config_utils import get_course_id
+from zaphod.config_utils import get_config
 from zaphod.asset_registry import AssetRegistry
+from zaphod.video_transcode import maybe_transcode
 from zaphod.errors import (
     media_file_not_found_error,
     CanvasAPIError,
@@ -40,6 +41,7 @@ PAGES_DIR = COURSE_ROOT / "pages"  # Legacy fallback
 ASSETS_DIR = COURSE_ROOT / "assets"
 METADATA_DIR = COURSE_ROOT / "_course_metadata"
 UPLOAD_CACHE_FILE = METADATA_DIR / "upload_cache.json"
+TRANSCODE_CACHE_DIR = METADATA_DIR / "transcoded"
 
 
 # =============================================================================
@@ -139,7 +141,8 @@ def iter_changed_content_dirs(changed_files: list[Path]):
 VIDEO_RE = re.compile(r"\{\{video:\s*\"?([^}\"]+?)\"?\s*\}\}")
 
 
-def get_or_upload_video_file(course, folder: Path, filename: str, cache: dict, registry: AssetRegistry = None):
+def get_or_upload_video_file(course, folder: Path, filename: str, cache: dict,
+                             registry: AssetRegistry = None, video_quality: str = None):
     """
     Return a canvasapi File object for `filename` in this course.
     First tries cache/Canvas, then looks locally using find_local_asset.
@@ -152,6 +155,7 @@ def get_or_upload_video_file(course, folder: Path, filename: str, cache: dict, r
 
     Args:
         registry: Optional AssetRegistry to track uploads
+        video_quality: Optional quality preset (low/medium/high/original)
     """
     clean_name = Path(filename).name
 
@@ -159,6 +163,8 @@ def get_or_upload_video_file(course, folder: Path, filename: str, cache: dict, r
     local_path = find_local_asset(folder, filename)
 
     if local_path:
+        # Transcode if requested
+        local_path = maybe_transcode(local_path, video_quality, TRANSCODE_CACHE_DIR)
         # Use content hash for cache key (handles updates)
         content_hash = hashlib.md5(local_path.read_bytes()).hexdigest()[:12]
         cache_key = f"{course.id}:{clean_name}:{content_hash}"
@@ -252,7 +258,8 @@ def get_or_upload_video_file(course, folder: Path, filename: str, cache: dict, r
     return canvas_file
 
 
-def replace_video_placeholders(text: str, course, folder: Path, canvas_base_url: str, cache: dict, registry: AssetRegistry = None) -> str:
+def replace_video_placeholders(text: str, course, folder: Path, canvas_base_url: str, cache: dict,
+                               registry: AssetRegistry = None, video_quality: str = None) -> str:
     """
     Replace {{video:filename}} with Canvas media-attachment iframe.
 
@@ -260,13 +267,14 @@ def replace_video_placeholders(text: str, course, folder: Path, canvas_base_url:
 
     Args:
         registry: Optional AssetRegistry to track uploads
+        video_quality: Optional quality preset (low/medium/high/original)
     """
     def replace(match):
         original_token = match.group(0)  # e.g., {{video:"intro.mp4"}}
         raw = match.group(1).strip()     # e.g., intro.mp4
 
         try:
-            f = get_or_upload_video_file(course, folder, raw, cache, registry)
+            f = get_or_upload_video_file(course, folder, raw, cache, registry, video_quality)
         except Exception as e:
             print(f"[publish:warn] {folder.name}: video '{raw}': {e}")
             return original_token  # Leave placeholder if upload fails
@@ -622,12 +630,16 @@ def find_all_asset_files() -> list[Path]:
     return asset_files
 
 
-def upload_file_to_canvas(course, file_path: Path, cache: dict, registry: AssetRegistry = None):
+def upload_file_to_canvas(course, file_path: Path, cache: dict,
+                          registry: AssetRegistry = None, video_quality: str = None):
     """Upload a file to Canvas, using content-hash cache to avoid re-uploads."""
     filename = file_path.name
 
     if not file_path.is_file():
         raise FileNotFoundError(f"File not found: {file_path}")
+
+    # Transcode if requested
+    file_path = maybe_transcode(file_path, video_quality, TRANSCODE_CACHE_DIR)
 
     # Use content hash for cache key
     content_hash = hashlib.md5(file_path.read_bytes()).hexdigest()[:12]
@@ -665,7 +677,7 @@ def upload_file_to_canvas(course, file_path: Path, cache: dict, registry: AssetR
     return canvas_file
 
 
-def bulk_upload_assets(course, cache: dict, registry: AssetRegistry = None):
+def bulk_upload_assets(course, cache: dict, registry: AssetRegistry = None, video_quality: str = None):
     """Bulk upload all asset files."""
     fence("Uploading Assets")
 
@@ -698,7 +710,7 @@ def bulk_upload_assets(course, cache: dict, registry: AssetRegistry = None):
                 skipped += 1
                 continue
 
-            upload_file_to_canvas(course, file_path, cache, registry)
+            upload_file_to_canvas(course, file_path, cache, registry, video_quality)
             uploaded += 1
         except Exception as e:
             failed += 1
@@ -737,10 +749,14 @@ def main():
     canvas = make_canvas_api_obj()
     canvas_base_url = get_canvas_base_url()
 
-    # Get course ID
-    course_id = get_course_id(course_dir=COURSE_ROOT)
-    if course_id is None:
+    # Load full config (course_id + video_quality etc.)
+    config = get_config(course_dir=COURSE_ROOT)
+    course_id = config.course_id
+    if not course_id:
         raise SystemExit("Cannot determine Canvas course ID; aborting.")
+    video_quality = config.video_quality
+    if video_quality:
+        print(f"Video quality preset: {video_quality}")
 
     course = canvas.get_course(course_id)
     if args.dry_run:
@@ -757,7 +773,7 @@ def main():
         if args.dry_run:
             print("(dry-run) Would upload assets")
         else:
-            bulk_upload_assets(course, cache, registry)
+            bulk_upload_assets(course, cache, registry, video_quality)
         return
 
     # Determine which content to publish
@@ -796,7 +812,7 @@ def main():
                     text = source_md.read_text(encoding="utf-8")
 
                     # 1. Replace {{video:...}} placeholders and track in registry
-                    text = replace_video_placeholders(text, course, d, canvas_base_url, cache, registry)
+                    text = replace_video_placeholders(text, course, d, canvas_base_url, cache, registry, video_quality)
 
                     # 2. Upload and replace local asset references, track in registry
                     text = replace_local_asset_references(text, course, d, cache, registry)
@@ -818,6 +834,13 @@ def main():
             traceback.print_exc()
 
         print()  # Blank line after each item
+
+    # Bulk upload all files in assets/ directory
+    if ASSETS_DIR.exists():
+        if args.dry_run:
+            print("(dry-run) Would upload asset files from assets/")
+        else:
+            bulk_upload_assets(course, cache, registry, video_quality)
 
     # Save cache and registry (skip in dry-run mode)
     if not args.dry_run:

@@ -24,6 +24,9 @@ watchdog>=3.0.0
 # Security - XML processing hardening
 defusedxml>=0.7.1
 
+# Video transcoding (optional - graceful skip if not installed)
+ffmpeg-python>=0.2.0
+
 # -------------------------------------------
 # Development / Testing Dependencies
 # -------------------------------------------

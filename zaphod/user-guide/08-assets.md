@@ -26,7 +26,7 @@ my-course/
 For files used only on one page:
 
 ```
-pages/
+content/
 └── welcome.page/
     ├── index.md
     └── welcome-banner.png    # Only used here
@@ -80,7 +80,7 @@ Use explicit relative paths to avoid ambiguity.
 
 ## Handling Duplicate Filenames
 
-If you have files with the same name in different locations (e.g., `assets/logo.png` and `pages/welcome.page/logo.png`):
+If you have files with the same name in different locations (e.g., `assets/logo.png` and `content/welcome.page/logo.png`):
 
 1. Zaphod uses **content-hash caching** — different files with the same name are tracked separately
 2. Each unique file content gets its own Canvas upload
@@ -107,6 +107,43 @@ For videos that should become Canvas media players:
 
 The video appears as an embedded player, not a download link.
 
+### Video Quality Presets
+
+Large video files can slow down uploads and waste Canvas storage. Add `video_quality` to `zaphod.yaml` to automatically transcode videos before upload using ffmpeg:
+
+```yaml
+# zaphod.yaml
+course_id: 12345
+video_quality: medium
+```
+
+| Preset | Resolution cap | Use case |
+|--------|---------------|----------|
+| `low` | 480p | Bandwidth-conscious delivery |
+| `medium` | 720p | Balanced quality and size (recommended) |
+| `high` | 1080p | Near-lossless |
+| `original` | unchanged | No transcoding (default) |
+
+**How it works:**
+- Transcoded files are cached in `_course_metadata/transcoded/` (not committed)
+- Cache is keyed by content hash + preset — re-transcoding is skipped if neither changes
+- Output is H.264/AAC in an MP4 container (Canvas-compatible)
+- Your original files are never modified
+- Requires [ffmpeg](https://ffmpeg.org) installed and `pip install ffmpeg-python`
+
+**Install ffmpeg:**
+```bash
+# macOS
+brew install ffmpeg
+
+# Ubuntu/Debian
+sudo apt install ffmpeg
+
+pip install ffmpeg-python
+```
+
+**Omitting `video_quality`** (or setting it to `original`) skips transcoding entirely — the original file is uploaded as-is.
+
 ---
 
 ## File Downloads
@@ -124,7 +161,7 @@ Zaphod uploads `worksheet.pdf` and converts the link.
 For important downloads, create a `.file` folder:
 
 ```
-pages/
+content/
 └── syllabus.file/
     ├── index.md
     └── CS101-Syllabus-Spring2026.pdf
