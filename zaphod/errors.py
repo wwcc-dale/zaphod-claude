@@ -152,7 +152,7 @@ def invalid_frontmatter_error(
         context={
             "file": str(file_path),
             "missing_fields": missing_fields,
-            "required_fields": ["name", "type"]
+            "required_fields": ["name"]
         },
         cause=cause
     )

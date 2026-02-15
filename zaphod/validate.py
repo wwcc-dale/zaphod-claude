@@ -102,7 +102,7 @@ class CourseValidator:
     """Validates a Zaphod course"""
     
     VALID_TYPES = {"page", "assignment", "link", "file"}
-    REQUIRED_FIELDS = {"name", "type"}
+    REQUIRED_FIELDS = {"name"}  # 'type' is inferred from folder extension, not required in frontmatter
     ASSIGNMENT_FIELDS = {"points_possible"}
     LINK_FIELDS = {"external_url"}
     

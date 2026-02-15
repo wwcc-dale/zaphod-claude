@@ -68,6 +68,15 @@ The following are treated as a **stable contract**. Changes here require a match
 | `position`| Item sort order           |
 | `name`    | Module display name       |
 
+### `type` is NOT required in frontmatter
+
+Content type is inferred from the folder suffix (`.page`, `.assignment`, `.quiz`, `.link`,
+`.file`) by `frontmatter_to_meta.py`. The `type:` key is **never required** in `index.md`.
+
+If `type:` is present it must be a valid value — the validator will flag unknown types.
+
+`zaphod-app` uses `validate.py` for validation, so this behaviour is shared automatically.
+
 ### zaphod.yaml keys read/written by the app
 
 `course_name`, `course_id`, `api_url`, `term`
