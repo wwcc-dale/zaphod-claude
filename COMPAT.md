@@ -62,11 +62,14 @@ The following are treated as a **stable contract**. Changes here require a match
 
 ### Frontmatter keys read by the app
 
-| Key       | Purpose                  |
-|-----------|--------------------------|
-| `title`   | Content item display name |
-| `position`| Item sort order           |
-| `name`    | Module display name       |
+| Key       | Location        | Purpose                          |
+|-----------|-----------------|----------------------------------|
+| `name`    | `index.md`      | Content item display name        |
+| `title`   | `module.yaml`   | Module display name              |
+| `position`| `index.md`      | Item sort order                  |
+
+`title:` in `index.md` is accepted as a legacy alias for `name:` by both zaphod-dev
+(`frontmatter_to_meta.py`) and zaphod-app. New content should always use `name:`.
 
 ### `type` is NOT required in frontmatter
 

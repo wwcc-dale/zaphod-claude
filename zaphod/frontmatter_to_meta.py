@@ -403,13 +403,17 @@ def process_folder(folder: Path):
                     metadata["type"] = inferred_type
                     print(f"inferred type: '{inferred_type}'")
 
-            # Infer name from folder if not set
+            # Infer name from folder if not set (title: accepted as legacy alias)
             if "name" not in metadata:
-                folder_stem = folder.stem
-                nice_name = re.sub(r'^\d+-', '', folder_stem)
-                nice_name = nice_name.replace('-', ' ').replace('_', ' ').title()
-                metadata["name"] = nice_name
-                print(f"inferred name: '{nice_name}'")
+                if "title" in metadata:
+                    metadata["name"] = metadata["title"]
+                    print(f"inferred name from title: '{metadata['name']}'")
+                else:
+                    folder_stem = folder.stem
+                    nice_name = re.sub(r'^\d+-', '', folder_stem)
+                    nice_name = nice_name.replace('-', ' ').replace('_', ' ').title()
+                    metadata["name"] = nice_name
+                    print(f"inferred name: '{nice_name}'")
             
             # Require minimum keys for a valid Canvas object
             for k in ["name", "type"]:

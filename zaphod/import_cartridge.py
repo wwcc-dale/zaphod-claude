@@ -1497,7 +1497,7 @@ def write_quiz(quiz: QuizItem, output_dir: Path):
 
     # Frontmatter with all metadata
     lines.append("---")
-    lines.append(f"title: {quiz.title}")
+    lines.append(f"name: {quiz.title}")
 
     # Add Zaphod-specific metadata if present
     if quiz.metadata.get("zaphod_points_possible"):
