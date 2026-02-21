@@ -267,9 +267,10 @@ def cli(ctx):
 @click.option('--no-prune', is_flag=True, help='Skip cleanup/prune step')
 @click.option('--dry-run', '-n', is_flag=True, help='Preview changes without making them')
 @click.option('--force-quizzes', is_flag=True, help='Force re-sync all quizzes, ignoring cache')
+@click.option('--quizzes-only', is_flag=True, help='Only run the quiz sync step (skip pages, banks, modules)')
 @click.option('--export', 'export_on_sync', is_flag=True, help='Export to cartridge after sync')
 @click.pass_obj
-def sync(ctx: ZaphodContext, watch: bool, course_id: Optional[int], assets_only: bool, no_prune: bool, dry_run: bool, force_quizzes: bool, export_on_sync: bool):
+def sync(ctx: ZaphodContext, watch: bool, course_id: Optional[int], assets_only: bool, no_prune: bool, dry_run: bool, force_quizzes: bool, quizzes_only: bool, export_on_sync: bool):
     """
     Sync local content to Canvas
     
@@ -296,6 +297,8 @@ def sync(ctx: ZaphodContext, watch: bool, course_id: Optional[int], assets_only:
         zaphod sync --no-prune         # Skip cleanup step
         zaphod sync --dry-run          # Preview what would happen
         zaphod sync --force-quizzes    # Force re-sync all quizzes (e.g. to apply bank links)
+        zaphod sync --quizzes-only     # Only run quiz step, skip everything else
+        zaphod sync --quizzes-only --force-quizzes  # Re-instantiate all quizzes from scratch
     """
     if dry_run and watch:
         click.echo(f"{B_WARNING} --dry-run and --watch cannot be used together", err=True)
@@ -333,24 +336,31 @@ def sync(ctx: ZaphodContext, watch: bool, course_id: Optional[int], assets_only:
         force_flag = " --force" if force_quizzes else ""
 
         # Run the pipeline steps manually
-        steps = [
-            ("frontmatter_to_meta.py", f"{B_INFO} Processing frontmatter"),
-        ]
+        steps = []
 
-        if assets_only:
+        if quizzes_only:
+            # Minimal path: prune bank-generated quizzes then sync quiz instances
+            steps.extend([
+                (f"prune_quizzes.py --quizzes-only{'' if dry_run else ' --apply'}", f"{SWEEP} Removing bank-generated quizzes"),
+                (f"sync_quizzes.py{dry_flag}{force_flag}", f"{QUIZ} Syncing quiz folders"),
+            ])
+        elif assets_only:
             steps.append(("publish_all.py --assets-only", f"{PACKAGE} Uploading assets"))
         else:
             steps.extend([
+                ("frontmatter_to_meta.py", f"{B_INFO} Processing frontmatter"),
                 (f"publish_all.py{dry_flag}", f"{UPLOAD} Publishing content"),
                 (f"sync_banks.py{dry_flag}", f"{BANK} Importing question banks"),
                 # Canvas auto-creates a quiz for every imported bank; delete them before
                 # syncing real quiz instances so they don't collide or leave orphans.
                 (f"prune_quizzes.py --quizzes-only{'' if dry_run else ' --apply'}", f"{SWEEP} Removing bank-generated quizzes"),
-                (f"sync_quizzes.py{dry_flag}{force_flag}", f"{QUIZ} Syncing quiz folders"),    # Quizzes before modules
+                (f"sync_quizzes.py{dry_flag}{force_flag}", f"{QUIZ} Syncing quiz folders"),
             ])
             
-            # These steps require content to exist in Canvas, skip in dry-run
-            if dry_run:
+            # These steps require content to exist in Canvas, skip in dry-run or quizzes-only
+            if quizzes_only:
+                pass  # skip modules, outcomes, rubrics, prune
+            elif dry_run:
                 steps.append(("SKIP", f"{BOOKS} Syncing modules (skipped - requires content to exist)"))
                 steps.append(("SKIP", f"{TARGET} Syncing outcomes (skipped - requires content to exist)"))
                 steps.append(("SKIP", f"{RUBRIC} Syncing rubrics (skipped - requires content to exist)"))
@@ -361,9 +371,8 @@ def sync(ctx: ZaphodContext, watch: bool, course_id: Optional[int], assets_only:
                     ("sync_rubrics.py", f"{RUBRIC} Syncing rubrics"),
                 ])
             
-            # Add prune step unless --no-prune
-            # Note: prune uses --apply for real runs, default is dry-run
-            if not no_prune:
+            # Add prune step unless --no-prune or --quizzes-only
+            if not no_prune and not quizzes_only:
                 if dry_run:
                     steps.append(("prune_canvas_content.py", f"{SWEEP} Cleaning up orphaned content (preview)"))
                 else:
