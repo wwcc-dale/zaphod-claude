@@ -574,7 +574,7 @@ def parse_quiz_folder(folder_path: Path) -> Optional[QuizFolder]:
         if bank_name or bank_id:
             question_groups.append(QuestionGroup(
                 bank_name=bank_name,
-                bank_id=int(bank_id) if bank_id else None,
+                bank_id=int(bank_id) if bank_id and str(bank_id).lstrip('-').isdigit() else None,
                 pick=int(group_meta.get("pick", 1)),
                 points_per_question=float(group_meta.get("points_per_question", 1.0)),
             ))
@@ -733,7 +733,7 @@ def delete_quiz_questions(quiz, api_url: str, api_key: str, course_id: int):
         get_rate_limiter().wait_if_needed()  # SECURITY: Rate limiting
         resp = requests.get(groups_url, headers=headers, timeout=REQUEST_TIMEOUT)
         if resp.status_code == 200:
-            groups = resp.json()
+            groups = resp.json().get("quiz_groups", [])
             if groups:
                 print(f"Deleting {len(groups)} question group(s)...")
             for g in groups:
