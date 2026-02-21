@@ -266,10 +266,10 @@ def cli(ctx):
 @click.option('--assets-only', is_flag=True, help='Only upload assets, skip content')
 @click.option('--no-prune', is_flag=True, help='Skip cleanup/prune step')
 @click.option('--dry-run', '-n', is_flag=True, help='Preview changes without making them')
-@click.option('--force', is_flag=True, help='Force re-sync all content, ignoring cache')
+@click.option('--force-quizzes', is_flag=True, help='Force re-sync all quizzes, ignoring cache')
 @click.option('--export', 'export_on_sync', is_flag=True, help='Export to cartridge after sync')
 @click.pass_obj
-def sync(ctx: ZaphodContext, watch: bool, course_id: Optional[int], assets_only: bool, no_prune: bool, dry_run: bool, force: bool, export_on_sync: bool):
+def sync(ctx: ZaphodContext, watch: bool, course_id: Optional[int], assets_only: bool, no_prune: bool, dry_run: bool, force_quizzes: bool, export_on_sync: bool):
     """
     Sync local content to Canvas
     
@@ -295,7 +295,7 @@ def sync(ctx: ZaphodContext, watch: bool, course_id: Optional[int], assets_only:
         zaphod sync --assets-only      # Only upload media files
         zaphod sync --no-prune         # Skip cleanup step
         zaphod sync --dry-run          # Preview what would happen
-        zaphod sync --force            # Force re-sync all, ignoring cache
+        zaphod sync --force-quizzes    # Force re-sync all quizzes (e.g. to apply bank links)
     """
     if dry_run and watch:
         click.echo(f"{B_WARNING} --dry-run and --watch cannot be used together", err=True)
@@ -328,9 +328,9 @@ def sync(ctx: ZaphodContext, watch: bool, course_id: Optional[int], assets_only:
         if export_on_sync:
             env["ZAPHOD_EXPORT_ON_SYNC"] = "1"
 
-        # Build script commands with --dry-run / --force where supported
+        # Build script commands with --dry-run / --force-quizzes where supported
         dry_flag = " --dry-run" if dry_run else ""
-        force_flag = " --force" if force else ""
+        force_flag = " --force" if force_quizzes else ""
 
         # Run the pipeline steps manually
         steps = [
@@ -342,7 +342,7 @@ def sync(ctx: ZaphodContext, watch: bool, course_id: Optional[int], assets_only:
         else:
             steps.extend([
                 (f"publish_all.py{dry_flag}", f"{UPLOAD} Publishing content"),
-                (f"sync_banks.py{dry_flag}{force_flag}", f"{BANK} Importing question banks"),
+                (f"sync_banks.py{dry_flag}", f"{BANK} Importing question banks"),
                 # Canvas auto-creates a quiz for every imported bank; delete them before
                 # syncing real quiz instances so they don't collide or leave orphans.
                 (f"prune_quizzes.py --quizzes-only{'' if dry_run else ' --apply'}", f"{SWEEP} Removing bank-generated quizzes"),
