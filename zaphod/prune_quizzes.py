@@ -203,12 +203,20 @@ def prune_stale_banks(course, local_names: Set[str], apply: bool):
 
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="Prune orphan quizzes and stale banks from Canvas")
+    parser.add_argument("--apply", action="store_true",
+                        help="Actually delete (default: dry-run preview only)")
+    parser.add_argument("--quizzes-only", action="store_true",
+                        help="Only prune orphan quizzes, skip bank pruning")
+    args = parser.parse_args()
+
+    # --apply flag wins; env var ZAPHOD_PRUNE_APPLY is a fallback (default: dry-run)
+    apply = args.apply or _truthy_env("ZAPHOD_PRUNE_APPLY", default=False)
+
     course_id = get_course_id()
     if not course_id:
         raise SystemExit("COURSE_ID is not set")
-
-    # Default: apply deletions unless explicitly disabled.
-    apply = _truthy_env("ZAPHOD_PRUNE_APPLY", default=True)
 
     canvas = make_canvas_api_obj()  # From canvas_client
     course = canvas.get_course(int(course_id))
@@ -221,9 +229,10 @@ def main():
 
     # Prune orphan quizzes (not backed by local .quiz/ folder)
     prune_orphan_quizzes(course, local_quiz_names, apply=apply)
-    
-    # Prune stale banks (not backed by local bank file)
-    prune_stale_banks(course, local_bank_names, apply=apply)
+
+    # Prune stale banks (not backed by local bank file) — skipped if --quizzes-only
+    if not args.quizzes_only:
+        prune_stale_banks(course, local_bank_names, apply=apply)
 
     print("[prune:quiz] Done.")
 

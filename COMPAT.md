@@ -86,6 +86,76 @@ If `type:` is present it must be a valid value — the validator will flag unkno
 
 ---
 
+## Question Bank + Quiz Workflow
+
+### The problem: Canvas auto-generates quizzes on bank import
+
+When `sync_banks.py` imports a question bank via the QTI content migration API, Canvas
+**automatically creates a quiz** with the same title as the bank. This is Canvas behaviour
+that cannot be suppressed — it is a side-effect of the QTI `assessment` format.
+
+These auto-generated quizzes must be deleted before the real quiz instances (defined in
+`.quiz/` folders) are synced, otherwise they collide with or shadow the real ones.
+
+### The solution: prune between banks and quizzes
+
+The sync pipeline handles this automatically:
+
+```
+sync_banks.py          → upload .bank.md files to Canvas (Canvas auto-creates quizzes)
+prune_quizzes.py       → delete all Canvas quizzes not backed by a local .quiz/ folder
+sync_quizzes.py        → create real quiz instances linked to the banks by bank_id
+```
+
+`prune_quizzes.py` runs with `--quizzes-only` in the pipeline (skips bank pruning, which
+requires an API endpoint Canvas does not reliably expose).
+
+### Bank ID bootstrapping: manual once, automated after
+
+Canvas does not expose bank IDs through its public API. The workflow to obtain them:
+
+1. In Canvas: **Quizzes → Manage Question Banks** — save the full page HTML
+2. Run `bank_scrape.py banks.html` from the course directory
+   → writes `question-banks/bank-mappings.yaml` (filename → Canvas bank ID)
+3. Quiz frontmatter references banks by filename: `bank: s1-foo.bank`
+4. `sync_quizzes.py` reads `bank-mappings.yaml` at sync time and resolves IDs automatically
+
+`bank-mappings.yaml` should be committed to the course repo. It only needs to be
+regenerated if banks are re-imported (which changes their Canvas IDs).
+
+### Quiz frontmatter for bank-linked quizzes
+
+```yaml
+question_groups:
+  - bank: s1-javascript-basics.bank   # filename in question-banks/
+    pick: 16                          # number of questions to draw
+    points_per_question: 1
+```
+
+`bank_id:` may also be present (stamped by `apply_bank_ids.py` utility) — if both are
+present, `bank_id:` takes priority. `bank_id:` is optional when `bank-mappings.yaml` exists.
+
+### CLI commands
+
+| Command | Effect |
+|---------|--------|
+| `zaphod sync` | Full pipeline including bank-generated quiz cleanup |
+| `zaphod sync --no-prune` | Skip all prune steps (including quiz cleanup) |
+| `zaphod prune --quizzes` | Manually delete orphan + bank-generated quizzes |
+| `zaphod prune --quizzes --dry-run` | Preview quiz deletions |
+
+### What zaphod-app needs to expose
+
+- A **"Link Banks" setup step** triggered after first bank import:
+  1. Prompt user to open Canvas → Quizzes → Manage Question Banks and save the page HTML
+  2. Accept the HTML file via file picker
+  3. Run `bank_scrape.py <file>` → generates `question-banks/bank-mappings.yaml`
+  4. Confirm success (show count of banks matched)
+- This step is a one-time setup per course. Once `bank-mappings.yaml` exists, subsequent
+  `zaphod sync` runs are fully automatic.
+
+---
+
 ## Versioning Approach
 
 When a set of changes is stable enough to converge:
