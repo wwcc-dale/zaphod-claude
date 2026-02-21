@@ -141,18 +141,44 @@ present, `bank_id:` takes priority. `bank_id:` is optional when `bank-mappings.y
 |---------|--------|
 | `zaphod sync` | Full pipeline including bank-generated quiz cleanup |
 | `zaphod sync --no-prune` | Skip all prune steps (including quiz cleanup) |
+| `zaphod sync --quizzes-only` | Run only quiz steps (prune + sync_quizzes) |
+| `zaphod sync --quizzes-only --force-quizzes` | Re-instantiate all quizzes from scratch |
 | `zaphod prune --quizzes` | Manually delete orphan + bank-generated quizzes |
 | `zaphod prune --quizzes --dry-run` | Preview quiz deletions |
+| `zaphod scrape banks <html_file>` | Extract bank IDs → `question-banks/bank-mappings.yaml` |
+| `zaphod scrape outcomes <html_file>` | Extract outcome IDs → `outcomes/outcome-mappings.yaml` |
 
 ### What zaphod-app needs to expose
 
-- A **"Link Banks" setup step** triggered after first bank import:
-  1. Prompt user to open Canvas → Quizzes → Manage Question Banks and save the page HTML
-  2. Accept the HTML file via file picker
-  3. Run `bank_scrape.py <file>` → generates `question-banks/bank-mappings.yaml`
-  4. Confirm success (show count of banks matched)
-- This step is a one-time setup per course. Once `bank-mappings.yaml` exists, subsequent
-  `zaphod sync` runs are fully automatic.
+#### "Link Banks" setup step (after first bank import)
+
+1. Prompt user to open Canvas → **Quizzes → Manage Question Banks** and save the page HTML
+2. Accept the HTML file via file picker
+3. Run `zaphod scrape banks <file>` (i.e. `POST /api/scrape/banks` with `{html_path: "..."}`)
+4. Show result: count of banks matched, any unmatched banks
+5. If successful, run `zaphod sync --quizzes-only` to instantiate quiz instances with bank links
+
+This step is one-time per course. Once `bank-mappings.yaml` is committed, subsequent
+`zaphod sync` runs are fully automatic.
+
+#### "Link Outcomes" setup step (after outcomes are created in Canvas)
+
+1. Prompt user to open Canvas → **Outcomes** and save the page HTML
+2. Accept the HTML file via file picker
+3. Run `zaphod scrape outcomes <file>` (i.e. `POST /api/scrape/outcomes` with `{html_path: "..."}`)
+4. Show result: count of outcomes matched, any unmatched outcomes
+5. Run `zaphod sync` to sync outcomes with Canvas IDs
+
+#### API endpoints to add to FastAPI (`src-python/api/`)
+
+```
+POST /api/scrape/banks      body: {html_path: str}  → runs scrape banks, returns {matched, unmatched_local, unmatched_canvas}
+POST /api/scrape/outcomes   body: {html_path: str}  → runs scrape outcomes, returns {matched, unmatched_local, unmatched_canvas}
+```
+
+Both endpoints accept either an absolute path to a saved HTML file or (better for UX) a
+base64-encoded HTML blob so the user doesn't need the file saved to a known path — the app
+can accept the file via a native file picker and POST the content directly.
 
 ---
 

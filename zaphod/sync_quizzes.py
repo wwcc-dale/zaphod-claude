@@ -570,11 +570,27 @@ def parse_quiz_folder(folder_path: Path) -> Optional[QuizFolder]:
     for group_meta in meta.get("question_groups", []):
         bank_name = group_meta.get("bank")
         bank_id = group_meta.get("bank_id")  # Direct Canvas bank ID
-        
-        if bank_name or bank_id:
+
+        # Resolve bank_id: must be a real integer, not a placeholder
+        resolved_bank_id: Optional[int] = None
+        if bank_id is not None:
+            bank_id_str = str(bank_id).strip()
+            if bank_id_str.lstrip('-').isdigit():
+                resolved_bank_id = int(bank_id_str)
+            elif bank_id_str and bank_id_str not in ('None', 'null', ''):
+                # Non-numeric value (e.g. XXXXX or PLACEHOLDER_REPLACE_AFTER_SYNC)
+                if bank_name:
+                    print(f"⚠️  {folder_path.name}: bank_id '{bank_id}' is a placeholder "
+                          f"— will resolve via bank-mappings.yaml using bank: {bank_name}")
+                else:
+                    print(f"⚠️  {folder_path.name}: bank_id '{bank_id}' is a placeholder and "
+                          f"no 'bank:' filename is set. Add 'bank: <filename>.bank' to the "
+                          f"question_groups entry, then run 'zaphod scrape banks banks.html'.")
+
+        if bank_name or resolved_bank_id is not None:
             question_groups.append(QuestionGroup(
                 bank_name=bank_name,
-                bank_id=int(bank_id) if bank_id and str(bank_id).lstrip('-').isdigit() else None,
+                bank_id=resolved_bank_id,
                 pick=int(group_meta.get("pick", 1)),
                 points_per_question=float(group_meta.get("points_per_question", 1.0)),
             ))
@@ -927,10 +943,13 @@ def create_canvas_quiz(
                             break
             
             if not resolved_bank_id:
-                display_name = bank_name or f"bank_id={group.bank_id}"
-                print(f"⚠️ Bank '{display_name}' not found, skipping group")
-                print(f"💡 Use 'bank_id: <id>' in frontmatter. Find IDs in Canvas UI:")
-                print(f"💡   Course > Settings > Question Banks > click bank > ID in URL")
+                if bank_name:
+                    print(f"⚠️ Bank '{bank_name}' not in bank-mappings.yaml — skipping group")
+                    print(f"💡 Run 'zaphod scrape banks banks.html' to regenerate bank-mappings.yaml")
+                else:
+                    print(f"⚠️ Question group has no resolvable bank reference — skipping")
+                    print(f"💡 Add 'bank: <filename>.bank' to the question_groups entry in index.md")
+                    print(f"💡 Then run 'zaphod scrape banks banks.html' to link bank IDs")
                 continue
             
             group_name = bank_name or f"Bank {resolved_bank_id}"

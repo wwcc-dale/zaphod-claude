@@ -16,6 +16,10 @@ COMMANDS:
         zaphod sync [--watch] [--dry-run]         Sync local content to Canvas
         zaphod prune [--dry-run] [--assignments]  Remove orphaned Canvas content
 
+    Canvas ID Scraping (one-time setup):
+        zaphod scrape banks <html_file>           Extract question bank IDs from Canvas HTML
+        zaphod scrape outcomes <html_file>        Extract outcome IDs from Canvas HTML
+
     Media Management:
         zaphod manifest                           Build media manifest for large files
         zaphod hydrate --source PATH              Download missing media files
@@ -674,6 +678,98 @@ def prune(ctx: ZaphodContext, dry_run: bool, assignments: bool, quizzes: bool):
 
     if not dry_run:
         click.echo(f"\n{B_SUCCESS} Prune complete!")
+
+
+# ============================================================================
+# Scrape Commands (Canvas ID extraction from saved HTML)
+# ============================================================================
+
+@cli.group()
+def scrape():
+    """
+    Extract Canvas IDs from saved HTML pages
+
+    Canvas does not expose question bank or outcome IDs via its public API.
+    These commands parse saved HTML pages from the Canvas UI to generate
+    local mapping files that the sync pipeline uses automatically.
+
+    This is a one-time setup per course (redo only if banks/outcomes are
+    re-imported, which changes their Canvas IDs).
+    """
+    pass
+
+
+@scrape.command('banks')
+@click.argument('html_file', type=click.Path(exists=True, dir_okay=False))
+@click.option('--output', '-o', type=click.Path(), help='Output file (default: question-banks/bank-mappings.yaml)')
+@click.option('--dry-run', '-n', is_flag=True, help='Preview matches without writing file')
+@click.pass_obj
+def scrape_banks(ctx: ZaphodContext, html_file: str, output: Optional[str], dry_run: bool):
+    """
+    Extract question bank IDs from Canvas HTML
+
+    Parses the Canvas "Manage Question Banks" page to generate
+    question-banks/bank-mappings.yaml, which maps local .bank.md filenames
+    to Canvas bank IDs. The sync pipeline reads this file automatically —
+    no manual bank_id stamping needed.
+
+    Steps:
+      1. Canvas > Quizzes > Manage Question Banks
+      2. Save the full page HTML (Ctrl+S / File > Save Page As...)
+      3. zaphod scrape banks banks.html
+      4. Commit question-banks/bank-mappings.yaml to your repo
+
+    Examples:
+        zaphod scrape banks banks.html
+        zaphod scrape banks banks.html --dry-run
+        zaphod scrape banks ~/Downloads/banks.html --output question-banks/bank-mappings.yaml
+    """
+    args = [str(Path(html_file).resolve())]
+    if output:
+        args.extend(['--output', output])
+    if dry_run:
+        args.append('--dry-run')
+    args.extend(['--course-dir', str(ctx.course_root)])
+
+    result = ctx.run_script('utilities/bank_scrape.py', args=args)
+    if result.returncode == 0 and not dry_run:
+        click.echo(f"\n{B_INFO} Next: run 'zaphod sync --quizzes-only' to instantiate quizzes with bank links")
+
+
+@scrape.command('outcomes')
+@click.argument('html_file', type=click.Path(exists=True, dir_okay=False))
+@click.option('--output', '-o', type=click.Path(), help='Output file (default: outcomes/outcome-mappings.yaml)')
+@click.option('--dry-run', '-n', is_flag=True, help='Preview matches without writing file')
+@click.pass_obj
+def scrape_outcomes(ctx: ZaphodContext, html_file: str, output: Optional[str], dry_run: bool):
+    """
+    Extract outcome IDs from Canvas HTML
+
+    Parses the Canvas "Outcomes" page to generate
+    outcomes/outcome-mappings.yaml, which maps local outcome codes to
+    Canvas outcome IDs. The sync pipeline reads this file automatically.
+
+    Steps:
+      1. Canvas > Outcomes
+      2. Save the full page HTML (Ctrl+S / File > Save Page As...)
+      3. zaphod scrape outcomes outcomes.html
+      4. Commit outcomes/outcome-mappings.yaml to your repo
+
+    Examples:
+        zaphod scrape outcomes outcomes.html
+        zaphod scrape outcomes outcomes.html --dry-run
+        zaphod scrape outcomes ~/Downloads/outcomes.html --output outcomes/outcome-mappings.yaml
+    """
+    args = [str(Path(html_file).resolve())]
+    if output:
+        args.extend(['--output', output])
+    if dry_run:
+        args.append('--dry-run')
+    args.extend(['--course-dir', str(ctx.course_root)])
+
+    result = ctx.run_script('utilities/outcome_scrape.py', args=args)
+    if result.returncode == 0 and not dry_run:
+        click.echo(f"\n{B_INFO} Next: run 'zaphod sync' to sync outcomes with Canvas IDs")
 
 
 # ============================================================================
