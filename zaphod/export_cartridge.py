@@ -1028,6 +1028,89 @@ def generate_rubric_xml(rubric: Dict[str, Any], assignment_id: str) -> str:
 
 
 # ============================================================================
+# Canvas-specific settings files
+# ============================================================================
+
+# Mapping from Zaphod item_type to Canvas content_type string in module_meta.xml
+CANVAS_CONTENT_TYPE: Dict[str, str] = {
+    "page":       "WikiPage",
+    "assignment": "Assignment",
+    "link":       "ExternalUrl",
+    "file":       "Attachment",
+}
+
+
+def generate_module_meta_xml(export: CartridgeExport) -> str:
+    """
+    Generate course_settings/module_meta.xml — Canvas-specific extension.
+
+    Without this file Canvas cannot distinguish Assignment from WikiPage and
+    falls back to importing everything as a wiki page. Each <item> must carry
+    a <content_type> so Canvas creates the right object on import.
+    """
+    CANVAS_NS = "http://canvas.instructure.com/xsd/cccv1p0"
+    XSI_NS = NS["xsi"]
+
+    root = ET.Element("modules")
+    root.set("xmlns", CANVAS_NS)
+    root.set("xmlns:xsi", XSI_NS)
+    root.set("xsi:schemaLocation",
+             f"{CANVAS_NS} https://canvas.instructure.com/xsd/cccv1p0.xsd")
+
+    # Build fast lookups: identifier -> (content_type, title, meta)
+    id_info: Dict[str, Dict] = {}
+    for item in export.content_items:
+        id_info[item.identifier] = {
+            "content_type": CANVAS_CONTENT_TYPE.get(item.item_type, "WikiPage"),
+            "title": item.title,
+            "published": item.meta.get("published", True),
+            "url": item.meta.get("external_url", "") if item.item_type == "link" else "",
+            "new_tab": str(item.meta.get("new_tab", False)).lower(),
+        }
+    for quiz in export.quizzes:
+        id_info[quiz.identifier] = {
+            "content_type": "Quizzes::Quiz",
+            "title": quiz.title,
+            "published": quiz.meta.get("published", False),
+            "url": "",
+            "new_tab": "false",
+        }
+
+    for pos, module in enumerate(export.modules, start=1):
+        mod_elem = ET.SubElement(root, "module")
+        mod_elem.set("identifier", module.identifier)
+
+        ET.SubElement(mod_elem, "title").text = module.title
+        ET.SubElement(mod_elem, "workflow_state").text = "active"
+        ET.SubElement(mod_elem, "position").text = str(pos)
+        ET.SubElement(mod_elem, "locked").text = "false"
+
+        items_elem = ET.SubElement(mod_elem, "items")
+        for item_pos, content_id in enumerate(module.items, start=1):
+            info = id_info.get(content_id)
+            if not info:
+                continue
+
+            item_elem = ET.SubElement(items_elem, "item")
+            item_elem.set("identifier", f"item_{content_id}")
+
+            ET.SubElement(item_elem, "content_type").text = info["content_type"]
+            ET.SubElement(item_elem, "workflow_state").text = (
+                "active" if info["published"] else "unpublished"
+            )
+            ET.SubElement(item_elem, "title").text = info["title"]
+            ET.SubElement(item_elem, "identifierref").text = content_id
+            if info["url"]:
+                ET.SubElement(item_elem, "url").text = info["url"]
+            ET.SubElement(item_elem, "position").text = str(item_pos)
+            ET.SubElement(item_elem, "new_tab").text = info.get("new_tab", "false")
+            ET.SubElement(item_elem, "indent").text = "0"
+            ET.SubElement(item_elem, "link_settings_json").text = "null"
+
+    return prettify_xml(root)
+
+
+# ============================================================================
 # Common Cartridge Manifest
 # ============================================================================
 
@@ -1086,6 +1169,15 @@ def generate_manifest(export: CartridgeExport) -> str:
 
     # Resources
     resources = ET.SubElement(manifest, f"{{{nsmap_imscc}}}resources")
+
+    # Canvas settings resource — provides module_meta.xml so Canvas knows content types
+    settings_resource = ET.SubElement(resources, f"{{{nsmap_imscc}}}resource")
+    settings_resource.set("identifier", f"{export.identifier}_settings")
+    settings_resource.set("type", "associatedcontent/imscc_xmlv1p1/learning-application-resource")
+    settings_resource.set("href", "course_settings/canvas_export.txt")
+    for settings_file in ["course_settings/canvas_export.txt", "course_settings/module_meta.xml"]:
+        fe = ET.SubElement(settings_resource, f"{{{nsmap_imscc}}}file")
+        fe.set("href", settings_file)
 
     # Add content resources
     for item in export.content_items:
@@ -1317,6 +1409,15 @@ def build_cartridge(export: CartridgeExport, output_path: Path):
         # Create directory structure
         (temp_dir / "web_resources").mkdir()
         (temp_dir / "assessments").mkdir()
+        (temp_dir / "course_settings").mkdir()
+
+        # Canvas-specific settings — module_meta.xml tells Canvas each item's content type
+        module_meta = generate_module_meta_xml(export)
+        (temp_dir / "course_settings" / "module_meta.xml").write_text(module_meta, encoding="utf-8")
+        (temp_dir / "course_settings" / "canvas_export.txt").write_text(
+            "Q: Why did the LMS cross the road?\nA: To get to the other course.\n", encoding="utf-8"
+        )
+        print(f"[cartridge] Generated course_settings/module_meta.xml")
 
         # Generate manifest
         manifest_content = generate_manifest(export)
