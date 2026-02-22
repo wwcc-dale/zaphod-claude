@@ -112,11 +112,11 @@ def infer_module_from_path(folder_path: Path) -> Optional[str]:
     return None
 
 
-# Common Cartridge namespaces
+# Common Cartridge namespaces — CC 1.1 (Canvas exports in 1.1; most reliable for Canvas import)
 NS = {
-    "imscc": "http://www.imsglobal.org/xsd/imsccv1p3/imscp_v1p1",
-    "lom": "http://ltsc.ieee.org/xsd/imsccv1p3/LOM/resource",
-    "lomimscc": "http://ltsc.ieee.org/xsd/imsccv1p3/LOM/manifest",
+    "imscc": "http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1",
+    "lom": "http://ltsc.ieee.org/xsd/imsccv1p1/LOM/resource",
+    "lomimscc": "http://ltsc.ieee.org/xsd/imsccv1p1/LOM/manifest",
     "xsi": "http://www.w3.org/2001/XMLSchema-instance",
 }
 
@@ -1011,33 +1011,41 @@ def generate_manifest(export: CartridgeExport) -> str:
     manifest = ET.Element(f"{{{nsmap_imscc}}}manifest")
     manifest.set("identifier", export.identifier)
     manifest.set(f"{{{NS['xsi']}}}schemaLocation",
-                 "http://www.imsglobal.org/xsd/imsccv1p3/imscp_v1p1 " +
-                 "http://www.imsglobal.org/profile/cc/ccv1p3/ccv1p3_imscp_v1p2_v1p0.xsd")
+                 "http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1 " +
+                 "http://www.imsglobal.org/profile/cc/ccv1p1/ccv1p1_imscp_v1p2_v1p0.xsd " +
+                 "http://ltsc.ieee.org/xsd/imsccv1p1/LOM/resource " +
+                 "http://www.imsglobal.org/profile/cc/ccv1p1/LOM/ccv1p1_lomresource_v1p0.xsd " +
+                 "http://ltsc.ieee.org/xsd/imsccv1p1/LOM/manifest " +
+                 "http://www.imsglobal.org/profile/cc/ccv1p1/LOM/ccv1p1_lommanifest_v1p0.xsd")
 
     # Metadata (in default namespace)
     metadata = ET.SubElement(manifest, f"{{{nsmap_imscc}}}metadata")
     schema = ET.SubElement(metadata, f"{{{nsmap_imscc}}}schema")
     schema.text = "IMS Common Cartridge"
     schemaversion = ET.SubElement(metadata, f"{{{nsmap_imscc}}}schemaversion")
-    schemaversion.text = "1.3.0"
+    schemaversion.text = "1.1.0"
 
     # LOM metadata (in lomimscc namespace)
     lom = ET.SubElement(metadata, f"{{{NS['lomimscc']}}}lom")
     general = ET.SubElement(lom, f"{{{NS['lomimscc']}}}general")
     title_elem = ET.SubElement(general, f"{{{NS['lomimscc']}}}title")
     string_elem = ET.SubElement(title_elem, f"{{{NS['lomimscc']}}}string")
-    string_elem.set("language", "en-US")
     string_elem.text = export.title
 
     # Organizations (in default namespace)
     organizations = ET.SubElement(manifest, f"{{{nsmap_imscc}}}organizations")
     organization = ET.SubElement(organizations, f"{{{nsmap_imscc}}}organization")
-    organization.set("identifier", "org1")
+    organization.set("identifier", "org_1")
     organization.set("structure", "rooted-hierarchy")
 
-    # Add modules as items
+    # Canvas requires a single root item ("LearningModules") wrapping all module items.
+    # Without this, Canvas ignores the module structure and puts everything in Misc.
+    root_item = ET.SubElement(organization, f"{{{nsmap_imscc}}}item")
+    root_item.set("identifier", "LearningModules")
+
+    # Add modules as items under the root wrapper
     for module in export.modules:
-        add_module_to_org(organization, module, export, nsmap_imscc)
+        add_module_to_org(root_item, module, export, nsmap_imscc)
 
     # Resources
     resources = ET.SubElement(manifest, f"{{{nsmap_imscc}}}resources")
@@ -1118,7 +1126,7 @@ def add_quiz_resource(resources: ET.Element, quiz: QuizItem, ns: str):
     """Add a quiz as a resource."""
     resource = ET.SubElement(resources, f"{{{ns}}}resource")
     resource.set("identifier", quiz.identifier)
-    resource.set("type", "imsqti_xmlv1p2/imscc_xmlv1p3/assessment")
+    resource.set("type", "imsqti_xmlv1p2/imscc_xmlv1p1/assessment")
     resource.set("href", f"assessments/{quiz.identifier}/assessment.xml")
 
     file_elem = ET.SubElement(resource, f"{{{ns}}}file")
@@ -1140,12 +1148,11 @@ def add_asset_resource(resources: ET.Element, asset: Path, ns: str):
 
 
 def get_resource_type(item_type: str) -> str:
-    """Map Zaphod item types to CC resource types."""
+    """Map Zaphod item types to CC 1.1 resource types (matches Canvas export format)."""
     type_map = {
         "page": "webcontent",
-        # Canvas expects this specific type for assignments
-        "assignment": "associatedcontent/imscc_xmlv1p3/learning-application-resource",
-        "link": "imswl_xmlv1p3",
+        "assignment": "associatedcontent/imscc_xmlv1p1/learning-application-resource",
+        "link": "imswl_xmlv1p1",
         "file": "webcontent",
     }
     return type_map.get(item_type, "webcontent")
