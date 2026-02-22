@@ -1135,8 +1135,8 @@ def add_content_resource(resources: ET.Element, item: ContentItem, ns: str):
     if item.item_type == "link":
         resource.set("href", item.meta.get("external_url", ""))
     elif item.item_type == "assignment":
-        # Assignments point to assignment.xml as primary resource
-        resource.set("href", f"web_resources/{item.identifier}/assignment.xml")
+        # Canvas CC format: href points to the HTML content file (not the settings XML)
+        resource.set("href", f"web_resources/{item.identifier}/content.html")
     else:
         resource.set("href", f"web_resources/{item.identifier}/content.html")
 
@@ -1144,13 +1144,11 @@ def add_content_resource(resources: ET.Element, item: ContentItem, ns: str):
     if item.item_type == "link":
         pass  # Links don't have files
     elif item.item_type == "assignment":
-        # Assignment XML is the primary file
-        file_elem = ET.SubElement(resource, f"{{{ns}}}file")
-        file_elem.set("href", f"web_resources/{item.identifier}/assignment.xml")
-        # Also include the HTML content
+        # Canvas CC format: HTML content first, settings XML second
         file_elem = ET.SubElement(resource, f"{{{ns}}}file")
         file_elem.set("href", f"web_resources/{item.identifier}/content.html")
-        # Add rubric file if present
+        file_elem = ET.SubElement(resource, f"{{{ns}}}file")
+        file_elem.set("href", f"web_resources/{item.identifier}/assignment_settings.xml")
         if item.rubric:
             file_elem = ET.SubElement(resource, f"{{{ns}}}file")
             file_elem.set("href", f"web_resources/{item.identifier}/rubric.xml")
@@ -1199,51 +1197,63 @@ def get_resource_type(item_type: str) -> str:
 # Assignment XML Generation
 # ============================================================================
 
-def generate_assignment_xml(item: ContentItem) -> str:
-    """Generate assignment XML for Common Cartridge (Canvas-compatible)."""
-    # Canvas uses a specific assignment settings format
+def generate_assignment_settings_xml(item: ContentItem) -> str:
+    """
+    Generate assignment_settings.xml for Common Cartridge (Canvas CC format).
+
+    Mirrors the format Canvas produces on export. The assignment description/body
+    lives in content.html — this file carries only the settings metadata.
+    """
     root = ET.Element("assignment")
     root.set("xmlns", "http://canvas.instructure.com/xsd/cccv1p0")
     root.set("xmlns:xsi", NS["xsi"])
+    root.set("xsi:schemaLocation",
+             "http://canvas.instructure.com/xsd/cccv1p0 "
+             "https://canvas.instructure.com/xsd/cccv1p0.xsd")
     root.set("identifier", item.identifier)
 
-    add_text_element(root, "title", item.title)
-
-    # Description with HTML content
-    add_text_element(root, "description", item.source_html, texttype="text/html")
-
-    # Assignment settings from metadata
     meta = item.meta
 
-    if meta.get("points_possible"):
-        add_text_element(root, "points_possible", str(meta["points_possible"]))
-
-    # Grading type
-    add_text_element(root, "grading_type", meta.get("grading_type", "points"))
-
-    # Submission types - Canvas format
-    if meta.get("submission_types"):
-        sub_types = meta["submission_types"]
-        if isinstance(sub_types, list):
-            add_text_element(root, "submission_types", ",".join(sub_types))
-        else:
-            add_text_element(root, "submission_types", str(sub_types))
-    else:
-        add_text_element(root, "submission_types", "online_upload")
+    add_text_element(root, "title", item.title)
+    add_text_element(root, "due_at", "")
+    add_text_element(root, "lock_at", "")
+    add_text_element(root, "unlock_at", "")
+    add_text_element(root, "module_locked", "false")
+    add_text_element(root, "workflow_state", "published" if meta.get("published") else "unpublished")
+    ET.SubElement(root, "assignment_overrides")
 
     # Allowed extensions
-    if meta.get("allowed_extensions"):
-        exts = meta["allowed_extensions"]
-        if isinstance(exts, list):
-            add_text_element(root, "allowed_extensions", ",".join(exts))
-        else:
-            add_text_element(root, "allowed_extensions", str(exts))
+    exts = meta.get("allowed_extensions", "")
+    if isinstance(exts, list):
+        exts = ",".join(exts)
+    add_text_element(root, "allowed_extensions", str(exts) if exts else "")
 
-    # Position/workflow
+    add_text_element(root, "has_group_category", "false")
+    add_text_element(root, "points_possible", str(meta.get("points_possible", 0)))
+    add_text_element(root, "grading_type", meta.get("grading_type", "points"))
+    add_text_element(root, "all_day", "false")
+
+    # Submission types
+    sub_types = meta.get("submission_types", "online_upload")
+    if isinstance(sub_types, list):
+        sub_types = ",".join(sub_types)
+    add_text_element(root, "submission_types", str(sub_types))
+
     add_text_element(root, "position", str(meta.get("position", 1)))
-    add_text_element(root, "workflow_state", "published" if meta.get("published") else "unpublished")
+    add_text_element(root, "turnitin_enabled", "false")
+    add_text_element(root, "vericite_enabled", "false")
+    add_text_element(root, "peer_review_count", "0")
+    add_text_element(root, "peer_reviews", "false")
+    add_text_element(root, "automatic_peer_reviews", "false")
+    add_text_element(root, "anonymous_peer_reviews", "false")
+    add_text_element(root, "grade_group_students_individually", "false")
+    add_text_element(root, "freeze_on_copy", "false")
+    add_text_element(root, "omit_from_final_grade", "false")
+    add_text_element(root, "hide_in_gradebook", "false")
+    add_text_element(root, "intra_group_peer_reviews", "false")
+    add_text_element(root, "only_visible_to_overrides", "false")
 
-    # Add rubric reference if present
+    # Rubric reference
     if item.rubric:
         rubric_ref = ET.SubElement(root, "rubric_identifierref")
         rubric_ref.text = f"{item.identifier}_rubric"
@@ -1323,12 +1333,12 @@ def build_cartridge(export: CartridgeExport, output_path: Path):
                 weblink_xml = generate_weblink_xml(item)
                 (item_dir / "weblink.xml").write_text(weblink_xml, encoding="utf-8")
             elif item.item_type == "assignment":
-                # Assignments get assignment XML + HTML content
-                assignment_xml = generate_assignment_xml(item)
-                (item_dir / "assignment.xml").write_text(assignment_xml, encoding="utf-8")
-
+                # Canvas CC format: content.html is primary, assignment_settings.xml is companion
                 content_html = generate_content_html(item)
                 (item_dir / "content.html").write_text(content_html, encoding="utf-8")
+
+                assignment_xml = generate_assignment_settings_xml(item)
+                (item_dir / "assignment_settings.xml").write_text(assignment_xml, encoding="utf-8")
 
                 if item.rubric:
                     rubric_xml = generate_rubric_xml(item.rubric, item.identifier)
