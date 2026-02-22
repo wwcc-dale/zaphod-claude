@@ -57,10 +57,14 @@ def load_course_outcomes_yaml() -> Dict[str, Any]:
     return data
 
 
-def build_rows(course_clos: List[Dict[str, Any]]) -> List[List[str]]:
+def build_rows(course_clos: List[Dict[str, Any]], course_id: int) -> List[List[str]]:
     """
     Build rows using the Outcomes CSV format with ratings encoded as separate cells
     after the ratings header.
+
+    vendor_guid is auto-derived as "{course_id}-{code}" when not explicitly set,
+    ensuring uniqueness across Canvas courses and preventing vendor_guid conflicts
+    when the same outcome codes are used in multiple courses.
     """
     rows: List[List[str]] = []
 
@@ -68,7 +72,9 @@ def build_rows(course_clos: List[Dict[str, Any]]) -> List[List[str]]:
         code = clo.get("code")
         title = clo.get("title")
         description = clo.get("description", "")
-        vendor_guid = clo.get("vendor_guid") or code
+        # Prefer explicit vendor_guid; fall back to course-scoped "{course_id}-{code}"
+        # so the same outcome code in different courses never collides in Canvas.
+        vendor_guid = clo.get("vendor_guid") or f"{course_id}-{code}"
         mastery_points = clo.get("mastery_points")
         ratings = clo.get("ratings") or []
 
@@ -150,11 +156,10 @@ def import_csv_to_course(canvas: Canvas, course_id: int):
     course = canvas.get_course(course_id)
     print(f"Importing CSV into course {course_id}...")
     outcome_import = course.import_outcome(str(COURSE_OUTCOMES_CSV))
-    attrs = getattr(outcome_import, "_attributes", {})
-    print(
-        f"Outcome import created: id={attrs.get('id')} "
-        f"workflow_state={attrs.get('workflow_state')}"
-    )
+    import_id = getattr(outcome_import, "id", None)
+    state = getattr(outcome_import, "workflow_state", None)
+    print(f"Outcome import queued: id={import_id} workflow_state={state}")
+    print("Canvas will email you when the import completes.")
 
 
 def outcomes_yaml_changed() -> bool:
@@ -198,7 +203,7 @@ def main():
         print("No course_outcomes defined; nothing to do")
         return
 
-    rows = build_rows(course_clos)
+    rows = build_rows(course_clos, course_id_int)
     if not rows:
         print("No valid CLO rows built; nothing written")
         return
