@@ -85,6 +85,33 @@ def get_content_dir() -> Path:
     return PAGES_DIR
 
 
+def infer_module_from_path(folder_path: Path) -> Optional[str]:
+    """
+    Infer module name from .module folder structure.
+
+    Mirrors the logic in sync_quizzes.py so directory-based module membership
+    works even without meta.json (which is a build artifact, not committed).
+    """
+    content_dir = get_content_dir()
+    try:
+        rel_path = folder_path.relative_to(content_dir)
+    except ValueError:
+        return None
+
+    for part in rel_path.parts:
+        part_lower = part.lower()
+        if part_lower.endswith(".module"):
+            module_name = part[:-7]  # Strip .module suffix
+            # Strip numeric sort prefix (##- pattern)
+            if len(module_name) >= 3 and module_name[:2].isdigit() and module_name[2] == '-':
+                module_name = module_name[3:]
+            return module_name.strip()
+        if part_lower.startswith("module-"):
+            return part[7:]  # Legacy: "module-Week 1" -> "Week 1"
+
+    return None
+
+
 # Common Cartridge namespaces
 NS = {
     "imscc": "http://www.imsglobal.org/xsd/imsccv1p3/imscp_v1p1",
@@ -268,6 +295,14 @@ def load_content_item(folder: Path, item_type: str) -> Optional[ContentItem]:
     if item_type == "assignment":
         rubric = load_rubric(folder)
 
+    # Resolve module membership: prefer explicit frontmatter/meta.json,
+    # fall back to inferring from .module folder structure (no meta.json needed).
+    modules = meta.get("modules", [])
+    if not modules:
+        inferred = infer_module_from_path(folder)
+        if inferred:
+            modules = [inferred]
+
     return ContentItem(
         identifier=generate_content_id(folder),
         title=meta.get("name", folder.name),
@@ -275,7 +310,7 @@ def load_content_item(folder: Path, item_type: str) -> Optional[ContentItem]:
         folder_path=folder,
         meta=meta,
         source_html=source_html,
-        modules=meta.get("modules", []),
+        modules=modules,
         rubric=rubric,
     )
 
@@ -353,11 +388,23 @@ def load_quiz(quiz_file: Path) -> Optional[QuizItem]:
         # Extract description (text before first numbered question)
         description = extract_quiz_description(body)
 
+        # Try inline questions first
         questions = parse_quiz_questions(body, meta.get("points_per_question", 1.0))
+
+        # If no inline questions, load from bank files referenced in question_groups
+        if not questions and meta.get("question_groups"):
+            questions = load_questions_from_banks(meta["question_groups"])
+
+        # Resolve quiz title: name: > title: > parent folder stem
+        if quiz_file.name == "index.md":
+            fallback_title = quiz_file.parent.stem.replace(".quiz", "").replace("-", " ").strip()
+        else:
+            fallback_title = quiz_file.stem
+        title = meta.get("name") or meta.get("title") or fallback_title
 
         return QuizItem(
             identifier=generate_id("quiz"),
-            title=meta.get("title", quiz_file.stem),
+            title=title,
             file_path=quiz_file,
             meta=meta,
             questions=questions,
@@ -366,6 +413,42 @@ def load_quiz(quiz_file: Path) -> Optional[QuizItem]:
     except Exception as e:
         print(f"[cartridge:warn] Failed to parse quiz {quiz_file}: {e}")
         return None
+
+
+def load_questions_from_banks(question_groups: list) -> List[Dict[str, Any]]:
+    """
+    Load questions from .bank.md files referenced in question_groups.
+
+    Only loads questions from banks that exist locally. Bank-linked quizzes
+    in the cartridge will contain the actual question pool; Canvas draws
+    from them at quiz-time.
+    """
+    questions = []
+    default_points = 1.0
+
+    for group in question_groups:
+        bank_filename = group.get("bank")  # e.g. "s1-javascript-basics.bank"
+        points = float(group.get("points_per_question", default_points))
+        if not bank_filename:
+            continue
+
+        # Resolve to .bank.md file
+        bank_path = QUESTION_BANKS_DIR / f"{bank_filename}.md"
+        if not bank_path.exists():
+            # Try without extra .md (e.g. if bank_filename already has .bank)
+            bank_path = QUESTION_BANKS_DIR / bank_filename
+        if not bank_path.exists():
+            continue
+
+        try:
+            raw = bank_path.read_text(encoding="utf-8")
+            _, body = split_quiz_frontmatter(raw)
+            bank_questions = parse_quiz_questions(body, points)
+            questions.extend(bank_questions)
+        except Exception as e:
+            print(f"[cartridge:warn] Failed to load bank {bank_filename}: {e}")
+
+    return questions
 
 
 def extract_quiz_description(body: str) -> str:
@@ -565,8 +648,8 @@ def load_outcomes() -> List[OutcomeItem]:
 # Module Structure Loader
 # ============================================================================
 
-def load_module_structure(content_items: List[ContentItem]) -> List[ModuleItem]:
-    """Build module structure from content item metadata."""
+def load_module_structure(content_items: List[ContentItem], quizzes: List["QuizItem"] = None) -> List[ModuleItem]:
+    """Build module structure from content item and quiz metadata."""
     module_map: Dict[str, ModuleItem] = {}
 
     # Load module order if available
@@ -592,7 +675,7 @@ def load_module_structure(content_items: List[ContentItem]) -> List[ModuleItem]:
                 items=[],
             )
 
-    # Add content to modules
+    # Add content items to modules
     position = len(module_order)
     for item in content_items:
         for module_name in item.modules:
@@ -605,6 +688,22 @@ def load_module_structure(content_items: List[ContentItem]) -> List[ModuleItem]:
                 )
                 position += 1
             module_map[module_name].items.append(item.identifier)
+
+    # Add quizzes to modules (infer module from .module folder structure)
+    for quiz in (quizzes or []):
+        quiz_folder = quiz.file_path.parent if quiz.file_path.name == "index.md" else quiz.file_path.parent
+        module_name = infer_module_from_path(quiz_folder)
+        if not module_name:
+            continue
+        if module_name not in module_map:
+            module_map[module_name] = ModuleItem(
+                identifier=generate_id("module"),
+                title=module_name,
+                position=position,
+                items=[],
+            )
+            position += 1
+        module_map[module_name].items.append(quiz.identifier)
 
     # Sort by position
     modules = sorted(module_map.values(), key=lambda m: m.position)
@@ -966,16 +1065,20 @@ def add_module_to_org(organization: ET.Element, module: ModuleItem, export: Cart
     title = ET.SubElement(item, f"{{{ns}}}title")
     title.text = module.title
 
-    # Add content items in this module
+    # Build lookup: identifier -> title for both content items and quizzes
+    id_to_title: Dict[str, str] = {c.identifier: c.title for c in export.content_items}
+    id_to_title.update({q.identifier: q.title for q in export.quizzes})
+
+    # Add items in this module
     for content_id in module.items:
-        content_item = next((c for c in export.content_items if c.identifier == content_id), None)
-        if content_item:
+        item_title = id_to_title.get(content_id)
+        if item_title:
             sub_item = ET.SubElement(item, f"{{{ns}}}item")
             sub_item.set("identifier", f"item_{content_id}")
             sub_item.set("identifierref", content_id)
 
             sub_title = ET.SubElement(sub_item, f"{{{ns}}}title")
-            sub_title.text = content_item.title
+            sub_title.text = item_title
 
 
 def add_content_resource(resources: ET.Element, item: ContentItem, ns: str):
@@ -1323,7 +1426,7 @@ def main():
     outcomes = load_outcomes()
     print(f"[cartridge]   {len(outcomes)} learning outcomes")
 
-    modules = load_module_structure(content_items)
+    modules = load_module_structure(content_items, quizzes)
     print(f"[cartridge]   {len(modules)} modules")
 
     assets = collect_assets()
