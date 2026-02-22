@@ -89,8 +89,14 @@ def load_local_outcomes(outcomes_dir):
 
         # Handle different possible structures
         if isinstance(data, dict):
-            # Structure 1: {outcomes: [{code: ..., title: ...}, ...]}
-            if 'outcomes' in data:
+            # Structure 1: {course_outcomes: [...]} or {outcomes: [...]}
+            if 'course_outcomes' in data:
+                for outcome in data['course_outcomes']:
+                    code = outcome.get('code')
+                    title = outcome.get('title', '')
+                    if code:
+                        local_outcomes[code] = title.strip()
+            elif 'outcomes' in data:
                 for outcome in data['outcomes']:
                     code = outcome.get('code')
                     title = outcome.get('title', '')
@@ -182,7 +188,7 @@ def fetch_outcomes_from_canvas(course_dir: Path):
     Returns: [(outcome_id_str, outcome_title), ...]
     """
     import sys
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
     from zaphod.canvas_client import make_canvas_api_obj
     from zaphod.config_utils import get_course_id
 
@@ -196,14 +202,13 @@ def fetch_outcomes_from_canvas(course_dir: Path):
     course = canvas.get_course(course_id)
 
     outcomes = []
-    for group in course.get_outcome_groups():
-        for link in group.get_linked_outcomes():
-            link_attrs = vars(link)
-            outcome = link_attrs.get('outcome', {})
-            o_id = outcome.get('id') if isinstance(outcome, dict) else getattr(outcome, 'id', None)
-            o_title = outcome.get('title') if isinstance(outcome, dict) else getattr(outcome, 'title', None)
-            if o_id and o_title:
-                outcomes.append((str(o_id), o_title))
+    for link in course.get_all_outcome_links_in_context():
+        link_attrs = vars(link)
+        outcome = link_attrs.get('outcome', {})
+        o_id = outcome.get('id') if isinstance(outcome, dict) else getattr(outcome, 'id', None)
+        o_title = outcome.get('title') if isinstance(outcome, dict) else getattr(outcome, 'title', None)
+        if o_id and o_title:
+            outcomes.append((str(o_id), o_title))
 
     return outcomes
 

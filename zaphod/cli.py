@@ -738,10 +738,11 @@ def scrape_banks(ctx: ZaphodContext, html_file: str, output: Optional[str], dry_
 
 @scrape.command('outcomes')
 @click.argument('html_file', type=click.Path(exists=True, dir_okay=False), required=False, default=None)
+@click.option('--use-api', 'use_api', is_flag=True, help='Fetch outcomes from Canvas API (no HTML file needed)')
 @click.option('--output', '-o', type=click.Path(), help='Output file (default: outcomes/outcome-mappings.yaml)')
 @click.option('--dry-run', '-n', is_flag=True, help='Preview matches without writing file')
 @click.pass_obj
-def scrape_outcomes(ctx: ZaphodContext, html_file: Optional[str], output: Optional[str], dry_run: bool):
+def scrape_outcomes(ctx: ZaphodContext, html_file: Optional[str], use_api: bool, output: Optional[str], dry_run: bool):
     """
     Extract outcome IDs from Canvas (via API or HTML)
 
@@ -750,7 +751,7 @@ def scrape_outcomes(ctx: ZaphodContext, html_file: Optional[str], output: Option
     which maps local outcome codes to Canvas outcome IDs.
 
     Without an HTML file (recommended):
-        zaphod scrape outcomes
+        zaphod scrape outcomes --use-api
 
     With a saved HTML file (legacy fallback):
         zaphod scrape outcomes outcomes.html
@@ -758,8 +759,10 @@ def scrape_outcomes(ctx: ZaphodContext, html_file: Optional[str], output: Option
     args = []
     if html_file:
         args.append(str(Path(html_file).resolve()))
-    else:
+    elif use_api:
         args.append('--use-api')
+    else:
+        args.append('--use-api')  # default to API when no file given
     if output:
         args.extend(['--output', output])
     if dry_run:
