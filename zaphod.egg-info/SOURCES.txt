@@ -1,5 +1,7 @@
 README.md
 setup.py
+tests/test_asset_registry.py
+tests/test_integration_workflow.py
 zaphod/__init__.py
 zaphod/cli.py
 zaphod/config_utils.py

@@ -737,30 +737,29 @@ def scrape_banks(ctx: ZaphodContext, html_file: str, output: Optional[str], dry_
 
 
 @scrape.command('outcomes')
-@click.argument('html_file', type=click.Path(exists=True, dir_okay=False))
+@click.argument('html_file', type=click.Path(exists=True, dir_okay=False), required=False, default=None)
 @click.option('--output', '-o', type=click.Path(), help='Output file (default: outcomes/outcome-mappings.yaml)')
 @click.option('--dry-run', '-n', is_flag=True, help='Preview matches without writing file')
 @click.pass_obj
-def scrape_outcomes(ctx: ZaphodContext, html_file: str, output: Optional[str], dry_run: bool):
+def scrape_outcomes(ctx: ZaphodContext, html_file: Optional[str], output: Optional[str], dry_run: bool):
     """
-    Extract outcome IDs from Canvas HTML
+    Extract outcome IDs from Canvas (via API or HTML)
 
-    Parses the Canvas "Outcomes" page to generate
-    outcomes/outcome-mappings.yaml, which maps local outcome codes to
-    Canvas outcome IDs. The sync pipeline reads this file automatically.
+    Fetches outcomes directly from the Canvas API (preferred) or falls back
+    to parsing a saved HTML file. Generates outcomes/outcome-mappings.yaml,
+    which maps local outcome codes to Canvas outcome IDs.
 
-    Steps:
-      1. Canvas > Outcomes
-      2. Save the full page HTML (Ctrl+S / File > Save Page As...)
-      3. zaphod scrape outcomes outcomes.html
-      4. Commit outcomes/outcome-mappings.yaml to your repo
+    Without an HTML file (recommended):
+        zaphod scrape outcomes
 
-    Examples:
+    With a saved HTML file (legacy fallback):
         zaphod scrape outcomes outcomes.html
-        zaphod scrape outcomes outcomes.html --dry-run
-        zaphod scrape outcomes ~/Downloads/outcomes.html --output outcomes/outcome-mappings.yaml
     """
-    args = [str(Path(html_file).resolve())]
+    args = []
+    if html_file:
+        args.append(str(Path(html_file).resolve()))
+    else:
+        args.append('--use-api')
     if output:
         args.extend(['--output', output])
     if dry_run:

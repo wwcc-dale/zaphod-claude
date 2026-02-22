@@ -1722,6 +1722,90 @@ def build_cartridge(export: CartridgeExport, output_path: Path):
 
 
 # ============================================================================
+# Outcomes CSV Export
+# ============================================================================
+
+def export_outcomes_csv(output_path: Path) -> int:
+    """
+    Generate an outcomes_import.csv alongside the .imscc cartridge.
+
+    Canvas does not support learning outcomes inside CC packages — they are
+    imported separately via POST /api/v1/courses/:id/outcome_imports (CSV).
+    sync_clo_via_csv.py handles the live-sync case; this function generates
+    the same CSV format for use after a cartridge import.
+
+    vendor_guid uses the explicit value from outcomes.yaml if set, otherwise
+    falls back to the outcome code alone (no course_id prefix — the target
+    course doesn't exist yet at export time so its ID is unknown).
+
+    Returns the number of outcomes written.
+    """
+    import csv as csv_mod
+
+    outcomes_file = OUTCOMES_DIR / "outcomes.yaml"
+    if not outcomes_file.is_file():
+        return 0
+
+    try:
+        data = yaml.safe_load(outcomes_file.read_text(encoding="utf-8"))
+    except Exception as e:
+        print(f"[cartridge:warn] Failed to read outcomes.yaml: {e}")
+        return 0
+
+    course_clos = (data or {}).get("course_outcomes", [])
+    if not course_clos:
+        return 0
+
+    BASE_HEADERS = [
+        "vendor_guid", "object_type", "title", "description",
+        "display_name", "calculation_method", "calculation_int",
+        "workflow_state", "parent_guids", "mastery_points",
+    ]
+
+    rows = []
+    for clo in course_clos:
+        code = clo.get("code", "")
+        title = clo.get("title", "")
+        if not code or not title:
+            continue
+
+        vendor_guid = clo.get("vendor_guid") or code
+        ratings = sorted(
+            clo.get("ratings") or [],
+            key=lambda r: float(r.get("points", 0)),
+            reverse=True,
+        )
+        ratings_cells = []
+        for r in ratings:
+            ratings_cells.append(str(r.get("points", "")))
+            ratings_cells.append(r.get("description", ""))
+
+        rows.append([
+            vendor_guid, "outcome", title,
+            clo.get("description", ""), code,
+            "", "", "active", "",
+            str(clo.get("mastery_points", "")) if clo.get("mastery_points") is not None else "",
+        ] + ratings_cells)
+
+    if not rows:
+        return 0
+
+    max_len = max(len(r) for r in rows)
+    extra = max(1, max_len - len(BASE_HEADERS))
+    headers = BASE_HEADERS + ["ratings"] + [""] * (extra - 1)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8", newline="") as f:
+        writer = csv_mod.writer(f)
+        writer.writerow(headers)
+        for row in rows:
+            padded = row + [""] * (len(headers) - len(row))
+            writer.writerow(padded)
+
+    return len(rows)
+
+
+# ============================================================================
 # Timestamp Generation
 # ============================================================================
 
@@ -1834,6 +1918,16 @@ def main():
     # Build the cartridge
     print("[cartridge] Building cartridge...")
     build_cartridge(export, output_path)
+
+    # Export outcomes CSV alongside the cartridge.
+    # Canvas does not support outcomes inside CC packages — they must be
+    # imported separately via Canvas > Course Settings > Import > Outcomes CSV.
+    if outcomes:
+        csv_path = output_path.with_suffix(".outcomes.csv")
+        n = export_outcomes_csv(csv_path)
+        if n:
+            print(f"[cartridge] Wrote {n} outcomes → {csv_path.name}")
+            print(f"[cartridge]   Import separately: Canvas > Course Settings > Import > Outcomes CSV")
 
     # In watch mode, indicate successful completion for pipeline integration
     if args.watch_mode:

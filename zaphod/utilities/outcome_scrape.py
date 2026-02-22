@@ -175,29 +175,62 @@ def save_outcome_mappings(mappings, output_file):
     print(f"✅ Saved {len(mappings)} mappings to {output_file}")
 
 
+def fetch_outcomes_from_canvas(course_dir: Path):
+    """
+    Fetch outcome IDs directly from the Canvas API.
+
+    Returns: [(outcome_id_str, outcome_title), ...]
+    """
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from zaphod.canvas_client import make_canvas_api_obj
+    from zaphod.config_utils import get_course_id
+
+    course_id_str = get_course_id()
+    if not course_id_str:
+        print("❌ No course ID found. Set course_id in zaphod.yaml.")
+        return None
+
+    course_id = int(course_id_str)
+    canvas = make_canvas_api_obj()
+    course = canvas.get_course(course_id)
+
+    outcomes = []
+    for group in course.get_outcome_groups():
+        for link in group.get_linked_outcomes():
+            link_attrs = vars(link)
+            outcome = link_attrs.get('outcome', {})
+            o_id = outcome.get('id') if isinstance(outcome, dict) else getattr(outcome, 'id', None)
+            o_title = outcome.get('title') if isinstance(outcome, dict) else getattr(outcome, 'title', None)
+            if o_id and o_title:
+                outcomes.append((str(o_id), o_title))
+
+    return outcomes
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description='Generate outcome-mappings.yaml from Canvas HTML',
+        description='Generate outcome-mappings.yaml from Canvas API or HTML',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Save Canvas page HTML, then:
+  # Fetch directly from Canvas API (recommended):
+  python outcome_scrape.py --use-api
+
+  # Legacy: parse a saved HTML file:
   python outcome_scrape.py outcomes.html
 
-  # Specify output location:
-  python outcome_scrape.py outcomes.html --output ../my-course/outcomes/outcome-mappings.yaml
-
-  # Show what would be generated without writing:
-  python outcome_scrape.py outcomes.html --dry-run
-
-Workflow:
-  1. Canvas > Outcomes
-  2. Save page source to outcomes.html
-  3. python outcome_scrape.py outcomes.html
-  4. Review: cat outcomes/outcome-mappings.yaml
+  # Dry run:
+  python outcome_scrape.py --use-api --dry-run
         """
     )
-    parser.add_argument('input_file', help='Input HTML file from Canvas')
+    parser.add_argument('input_file', nargs='?', default=None,
+                        help='Input HTML file from Canvas (optional; use --use-api instead)')
+    parser.add_argument(
+        '--use-api',
+        action='store_true',
+        help='Fetch outcomes directly from Canvas API (no HTML file needed)'
+    )
     parser.add_argument(
         '--output', '-o',
         type=Path,
@@ -216,6 +249,11 @@ Workflow:
     )
     args = parser.parse_args()
 
+    if not args.use_api and not args.input_file:
+        print("❌ Provide an HTML file or use --use-api to fetch from Canvas.")
+        parser.print_help()
+        return 1
+
     # Determine paths
     course_dir = args.course_dir
     outcomes_dir = course_dir / "outcomes"
@@ -231,22 +269,30 @@ Workflow:
         print(f"   Make sure you're running this from your course directory")
         return 1
 
-    # Read HTML
-    try:
-        with open(args.input_file, 'r', encoding='utf-8') as f:
-            html_content = f.read()
-    except FileNotFoundError:
-        print(f"❌ File not found: {args.input_file}")
-        return 1
+    # Fetch Canvas outcomes
+    if args.use_api:
+        print("Fetching outcomes from Canvas API...")
+        canvas_outcomes = fetch_outcomes_from_canvas(course_dir)
+        if canvas_outcomes is None:
+            return 1
+        if not canvas_outcomes:
+            print("⚠️ No outcomes found in Canvas for this course.")
+            return 1
+    else:
+        # Parse from HTML file
+        try:
+            with open(args.input_file, 'r', encoding='utf-8') as f:
+                html_content = f.read()
+        except FileNotFoundError:
+            print(f"❌ File not found: {args.input_file}")
+            return 1
 
-    # Parse Canvas outcomes from HTML
-    canvas_outcomes = parse_html_outcomes(html_content)
-    if not canvas_outcomes:
-        print(f"⚠️ No outcomes found in HTML")
-        print(f"   Make sure you saved the full page source from Canvas")
-        print(f"   If outcomes are there, the HTML structure may have changed.")
-        print(f"   Check the regex patterns in parse_html_outcomes()")
-        return 1
+        canvas_outcomes = parse_html_outcomes(html_content)
+        if not canvas_outcomes:
+            print(f"⚠️ No outcomes found in HTML")
+            print(f"   The Canvas Outcomes page is a React app — HTML scraping")
+            print(f"   may not work. Use --use-api instead.")
+            return 1
 
     print(f"ℹ️ Found {len(canvas_outcomes)} outcomes in Canvas HTML")
 
