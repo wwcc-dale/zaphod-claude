@@ -1040,6 +1040,53 @@ CANVAS_CONTENT_TYPE: Dict[str, str] = {
 }
 
 
+def generate_course_settings_xml(export: CartridgeExport) -> str:
+    """
+    Generate course_settings/course_settings.xml — required for Canvas CE import.
+
+    Canvas CE importer needs this file to recognise the package as a Canvas
+    export and activate its full import path (pages, quizzes, assignments).
+    Without it CE mode silently skips most content types.
+    """
+    CANVAS_NS = "http://canvas.instructure.com/xsd/cccv1p0"
+    root = ET.Element("course")
+    root.set("identifier", export.identifier)
+    root.set("xmlns", CANVAS_NS)
+    root.set("xmlns:xsi", NS["xsi"])
+    root.set("xsi:schemaLocation",
+             f"{CANVAS_NS} https://canvas.instructure.com/xsd/cccv1p0.xsd")
+
+    ET.SubElement(root, "title").text = export.title
+    ET.SubElement(root, "course_code").text = export.title
+    ET.SubElement(root, "start_at")
+    ET.SubElement(root, "conclude_at")
+    ET.SubElement(root, "is_public").text = "false"
+    ET.SubElement(root, "allow_student_wiki_edits").text = "false"
+    ET.SubElement(root, "lock_all_announcements").text = "false"
+    ET.SubElement(root, "default_view").text = "modules"
+    ET.SubElement(root, "workflow_state").text = "available"
+
+    return prettify_xml(root)
+
+
+def generate_assignment_groups_xml() -> str:
+    """Generate a minimal assignment_groups.xml for Canvas CE import."""
+    CANVAS_NS = "http://canvas.instructure.com/xsd/cccv1p0"
+    root = ET.Element("assignmentGroups")
+    root.set("xmlns", CANVAS_NS)
+    root.set("xmlns:xsi", NS["xsi"])
+    root.set("xsi:schemaLocation",
+             f"{CANVAS_NS} https://canvas.instructure.com/xsd/cccv1p0.xsd")
+
+    group = ET.SubElement(root, "assignmentGroup")
+    group.set("identifier", "default_assignment_group")
+    ET.SubElement(group, "title").text = "Assignments"
+    ET.SubElement(group, "position").text = "1"
+    ET.SubElement(group, "group_weight").text = "0.0"
+
+    return prettify_xml(root)
+
+
 def generate_module_meta_xml(export: CartridgeExport) -> str:
     """
     Generate course_settings/module_meta.xml — Canvas-specific extension.
@@ -1170,12 +1217,18 @@ def generate_manifest(export: CartridgeExport) -> str:
     # Resources
     resources = ET.SubElement(manifest, f"{{{nsmap_imscc}}}resources")
 
-    # Canvas settings resource — provides module_meta.xml so Canvas knows content types
+    # Canvas CE settings resource — Canvas CE importer expects this block to
+    # activate the full Canvas import path (pages, quizzes, assignments, modules).
     settings_resource = ET.SubElement(resources, f"{{{nsmap_imscc}}}resource")
     settings_resource.set("identifier", f"{export.identifier}_settings")
     settings_resource.set("type", "associatedcontent/imscc_xmlv1p1/learning-application-resource")
     settings_resource.set("href", "course_settings/canvas_export.txt")
-    for settings_file in ["course_settings/canvas_export.txt", "course_settings/module_meta.xml"]:
+    for settings_file in [
+        "course_settings/canvas_export.txt",
+        "course_settings/course_settings.xml",
+        "course_settings/module_meta.xml",
+        "course_settings/assignment_groups.xml",
+    ]:
         fe = ET.SubElement(settings_resource, f"{{{nsmap_imscc}}}file")
         fe.set("href", settings_file)
 
@@ -1492,13 +1545,22 @@ def build_cartridge(export: CartridgeExport, output_path: Path):
         (temp_dir / "assessments").mkdir()
         (temp_dir / "course_settings").mkdir()
 
-        # Canvas-specific settings — module_meta.xml tells Canvas each item's content type
-        module_meta = generate_module_meta_xml(export)
-        (temp_dir / "course_settings" / "module_meta.xml").write_text(module_meta, encoding="utf-8")
-        (temp_dir / "course_settings" / "canvas_export.txt").write_text(
-            "Q: Why did the LMS cross the road?\nA: To get to the other course.\n", encoding="utf-8"
+        # Canvas CE settings — required for Canvas CE import to process all content types
+        cs_dir = temp_dir / "course_settings"
+        (cs_dir / "course_settings.xml").write_text(
+            generate_course_settings_xml(export), encoding="utf-8"
         )
-        print(f"[cartridge] Generated course_settings/module_meta.xml")
+        (cs_dir / "assignment_groups.xml").write_text(
+            generate_assignment_groups_xml(), encoding="utf-8"
+        )
+        (cs_dir / "module_meta.xml").write_text(
+            generate_module_meta_xml(export), encoding="utf-8"
+        )
+        (cs_dir / "canvas_export.txt").write_text(
+            "Q: Why did the LMS cross the road?\nA: To get to the other course.\n",
+            encoding="utf-8",
+        )
+        print(f"[cartridge] Generated course_settings/ (CE package files)")
 
         # Generate manifest
         manifest_content = generate_manifest(export)
