@@ -6,7 +6,7 @@
 
 export_cartridge.py
 
-Export a Zaphod course to IMS Common Cartridge 1.3 format.
+Export a Zaphod course to IMS Common Cartridge 1.1 format.
 
 This creates a complete course package that can be imported into:
 - Canvas LMS
@@ -648,8 +648,32 @@ def load_outcomes() -> List[OutcomeItem]:
 # Module Structure Loader
 # ============================================================================
 
+def _item_sort_key(folder_path: Path, meta: Dict[str, Any]) -> tuple:
+    """
+    Sort key for items within a module.
+
+    Priority (mirrors sync_modules.py ordering logic):
+    1. position: frontmatter key
+    2. Numeric folder prefix (01-, 02-, etc.)
+    3. Alphabetical by folder name
+    """
+    pos = meta.get("position")
+    if pos is not None:
+        try:
+            return (0, float(pos), folder_path.name)
+        except (TypeError, ValueError):
+            pass
+    folder_name = folder_path.name
+    m = re.match(r'^(\d+)[_-]', folder_name)
+    if m:
+        return (1, float(m.group(1)), folder_name)
+    return (2, 0.0, folder_name)
+
+
 def load_module_structure(content_items: List[ContentItem], quizzes: List["QuizItem"] = None) -> List[ModuleItem]:
     """Build module structure from content item and quiz metadata."""
+    from collections import defaultdict
+
     module_map: Dict[str, ModuleItem] = {}
 
     # Load module order if available
@@ -665,7 +689,18 @@ def load_module_structure(content_items: List[ContentItem], quizzes: List["QuizI
         except Exception:
             pass
 
-    # Create modules from order first
+    # If no module_order.yaml, discover module order from .module folder structure.
+    # Sorting .module folders alphabetically preserves numeric prefix ordering (00-, 01-, etc.)
+    if not module_order:
+        content_dir = get_content_dir()
+        for folder in sorted(content_dir.glob("*.module")):
+            raw_name = folder.name[:-7]  # Strip .module suffix
+            # Strip numeric sort prefix (##- pattern, e.g. "01-Foundations" -> "Foundations")
+            if len(raw_name) >= 3 and raw_name[:2].isdigit() and raw_name[2] == '-':
+                raw_name = raw_name[3:]
+            module_order.append(raw_name.strip())
+
+    # Create module objects in declared order
     for i, name in enumerate(module_order):
         if name not in module_map:
             module_map[name] = ModuleItem(
@@ -675,26 +710,26 @@ def load_module_structure(content_items: List[ContentItem], quizzes: List["QuizI
                 items=[],
             )
 
-    # Add content items to modules
-    position = len(module_order)
+    # Collect all items (content + quizzes) grouped by module, with sort key.
+    # Items are sorted within each module before being written to module.items.
+    module_entries: Dict[str, list] = defaultdict(list)
+
     for item in content_items:
         for module_name in item.modules:
-            if module_name not in module_map:
-                module_map[module_name] = ModuleItem(
-                    identifier=generate_id("module"),
-                    title=module_name,
-                    position=position,
-                    items=[],
-                )
-                position += 1
-            module_map[module_name].items.append(item.identifier)
+            key = _item_sort_key(item.folder_path, item.meta)
+            module_entries[module_name].append((key, item.identifier))
 
-    # Add quizzes to modules (infer module from .module folder structure)
     for quiz in (quizzes or []):
-        quiz_folder = quiz.file_path.parent if quiz.file_path.name == "index.md" else quiz.file_path.parent
+        quiz_folder = quiz.file_path.parent
         module_name = infer_module_from_path(quiz_folder)
         if not module_name:
             continue
+        key = _item_sort_key(quiz_folder, quiz.meta)
+        module_entries[module_name].append((key, quiz.identifier))
+
+    # Populate module items (create new modules for any not in module_order)
+    position = len(module_order)
+    for module_name, entries in module_entries.items():
         if module_name not in module_map:
             module_map[module_name] = ModuleItem(
                 identifier=generate_id("module"),
@@ -703,9 +738,11 @@ def load_module_structure(content_items: List[ContentItem], quizzes: List["QuizI
                 items=[],
             )
             position += 1
-        module_map[module_name].items.append(quiz.identifier)
+        # Sort items within this module by priority key
+        entries.sort(key=lambda e: e[0])
+        module_map[module_name].items.extend(identifier for _, identifier in entries)
 
-    # Sort by position
+    # Sort modules by position
     modules = sorted(module_map.values(), key=lambda m: m.position)
     return modules
 
@@ -1221,7 +1258,7 @@ def generate_assignment_xml(item: ContentItem) -> str:
 def generate_weblink_xml(item: ContentItem) -> str:
     """Generate web link XML for Common Cartridge."""
     root = ET.Element("webLink")
-    root.set("xmlns", "http://www.imsglobal.org/xsd/imsccv1p3/imswl_v1p3")
+    root.set("xmlns", "http://www.imsglobal.org/xsd/imswl_v1p1")
     root.set("xmlns:xsi", NS["xsi"])
 
     add_text_element(root, "title", item.title)
