@@ -268,7 +268,9 @@ def load_content_item(folder: Path, item_type: str) -> Optional[ContentItem]:
         except Exception as e:
             print(f"[cartridge:warn] Failed to parse {index_path}: {e}")
 
-    # Always merge meta.json if it exists (contains 'name' and other inferred fields)
+    # meta.json is a pipeline build artifact (created by frontmatter_to_meta.py,
+    # removed in prune step) — present only when the pipeline has run recently.
+    # Export must work from raw index.md frontmatter alone.
     if meta_path.is_file():
         try:
             meta_json = json.loads(meta_path.read_text(encoding="utf-8"))
@@ -277,10 +279,17 @@ def load_content_item(folder: Path, item_type: str) -> Optional[ContentItem]:
         except Exception as e:
             print(f"[cartridge:warn] Failed to load {meta_path}: {e}")
 
+    # source.md is also a build artifact — use index.md body as primary source.
     if source_path.is_file() and not source_content:
         source_content = source_path.read_text(encoding="utf-8")
 
-    if not meta.get("name"):
+    # type is inferred from folder extension by load_content_items — not required
+    # in frontmatter. Stamp it onto meta so downstream code can read it if needed.
+    meta.setdefault("type", item_type)
+
+    # name: is canonical; title: is the legacy alias (mirrors frontmatter_to_meta.py)
+    name = meta.get("name") or meta.get("title")
+    if not name:
         print(f"[cartridge:warn] Skipping {folder.name}: no name in metadata")
         return None
 
@@ -305,7 +314,7 @@ def load_content_item(folder: Path, item_type: str) -> Optional[ContentItem]:
 
     return ContentItem(
         identifier=generate_content_id(folder),
-        title=meta.get("name", folder.name),
+        title=name,
         item_type=item_type,
         folder_path=folder,
         meta=meta,
@@ -788,6 +797,47 @@ def collect_assets() -> List[Path]:
 # ============================================================================
 # QTI Export
 # ============================================================================
+
+def generate_non_cc_qti(quiz: QuizItem) -> str:
+    """
+    Generate a non-CC QTI 1.2 file for non_cc_assessments/{id}.xml.qti.
+
+    Canvas CE importer's convert_quizzes() looks ONLY in non_cc_assessments/
+    and returns early (creating NO quiz objects) if that folder is absent.
+    The non-CC format uses a different schema URL and a nested section structure.
+    Content is otherwise identical to the CC QTI.
+    """
+    root = ET.Element("questestinterop")
+    root.set("xmlns", "http://www.imsglobal.org/xsd/ims_qtiasiv1p2")
+    root.set("xmlns:xsi", "http://www.w3.org/2001/XMLSchema-instance")
+    root.set("xsi:schemaLocation",
+             "http://www.imsglobal.org/xsd/ims_qtiasiv1p2 "
+             "http://www.imsglobal.org/xsd/ims_qtiasiv1p2p1.xsd")
+
+    assessment = ET.SubElement(root, "assessment")
+    assessment.set("ident", quiz.identifier)
+    assessment.set("title", quiz.title)
+
+    qtimetadata = ET.SubElement(assessment, "qtimetadata")
+    meta = quiz.meta
+    if meta.get("time_limit"):
+        add_qti_metadata(qtimetadata, "qmd_timelimit", str(meta["time_limit"]))
+    if meta.get("allowed_attempts"):
+        add_qti_metadata(qtimetadata, "cc_maxattempts", str(meta["allowed_attempts"]))
+
+    root_section = ET.SubElement(assessment, "section")
+    root_section.set("ident", "root_section")
+
+    # Questions go in a nested section (Canvas non-CC format convention)
+    questions_section = ET.SubElement(root_section, "section")
+    questions_section.set("ident", f"{quiz.identifier}_questions")
+    questions_section.set("title", quiz.title)
+
+    for q in quiz.questions:
+        add_qti_item(questions_section, q, quiz.identifier)
+
+    return prettify_xml(root)
+
 
 def generate_qti_assessment(quiz: QuizItem) -> str:
     """Generate QTI 1.2 XML for a quiz."""
@@ -1327,13 +1377,17 @@ def add_quiz_resource(resources: ET.Element, quiz: QuizItem, ns: str):
     dep = ET.SubElement(resource, f"{{{ns}}}dependency")
     dep.set("identifierref", meta_id)
 
-    # assessment_meta resource — Canvas quiz settings
+    # assessment_meta resource — Canvas quiz settings.
+    # Also lists the non_cc QTI file so Canvas CE importer's convert_quizzes()
+    # (which only looks in non_cc_assessments/) can find and create the quiz.
     meta_resource = ET.SubElement(resources, f"{{{ns}}}resource")
     meta_resource.set("identifier", meta_id)
     meta_resource.set("type", "associatedcontent/imscc_xmlv1p1/learning-application-resource")
     meta_resource.set("href", f"assessments/{quiz.identifier}/assessment_meta.xml")
     meta_file = ET.SubElement(meta_resource, f"{{{ns}}}file")
     meta_file.set("href", f"assessments/{quiz.identifier}/assessment_meta.xml")
+    non_cc_file = ET.SubElement(meta_resource, f"{{{ns}}}file")
+    non_cc_file.set("href", f"non_cc_assessments/{quiz.identifier}.xml.qti")
 
 
 def add_asset_resource(resources: ET.Element, asset: Path, ns: str):
@@ -1512,12 +1566,29 @@ def generate_weblink_xml(item: ContentItem) -> str:
 # ============================================================================
 
 def generate_content_html(item: ContentItem) -> str:
-    """Generate HTML file for a content item."""
-    return f"""<!DOCTYPE html>
-<html>
+    """Generate HTML file for a content item.
+
+    For pages (webcontent), Canvas CE importer uses <meta name="identifier">
+    to link the HTML file back to its manifest resource identifier, and
+    <meta name="workflow_state"> to set publication status.
+    Assignments don't need these — they link via assignment_settings.xml.
+    """
+    workflow_state = "active" if item.meta.get("published", True) else "unpublished"
+
+    if item.item_type == "page":
+        meta_tags = (
+            f'<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>\n'
+            f'<meta name="identifier" content="{item.identifier}"/>\n'
+            f'<meta name="editing_roles" content="teachers"/>\n'
+            f'<meta name="workflow_state" content="{workflow_state}"/>'
+        )
+    else:
+        meta_tags = '<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>'
+
+    return f"""<html>
 <head>
-    <meta charset="utf-8">
-    <title>{html.escape(item.title)}</title>
+{meta_tags}
+<title>{html.escape(item.title)}</title>
 </head>
 <body>
 {item.source_html}
@@ -1598,17 +1669,26 @@ def build_cartridge(export: CartridgeExport, output_path: Path):
             print(f"[cartridge] Generated {item.item_type}: {item.title}")
 
         # Generate quizzes
+        non_cc_dir = temp_dir / "non_cc_assessments"
+        non_cc_dir.mkdir(parents=True, exist_ok=True)
+
         for quiz in export.quizzes:
             quiz_dir = temp_dir / "assessments" / quiz.identifier
             quiz_dir.mkdir(parents=True, exist_ok=True)
 
-            # QTI file (questions)
+            # CC-format QTI (kept for completeness / standard importers)
             qti_xml = generate_qti_assessment(quiz)
             (quiz_dir / "assessment_qti.xml").write_text(qti_xml, encoding="utf-8")
 
-            # Canvas assessment_meta.xml (quiz settings — required for Canvas to create the quiz)
+            # Canvas assessment_meta.xml (quiz settings)
             meta_xml = generate_assessment_meta_xml(quiz)
             (quiz_dir / "assessment_meta.xml").write_text(meta_xml, encoding="utf-8")
+
+            # non_cc_assessments/{id}.xml.qti — Canvas CE importer's convert_quizzes()
+            # looks ONLY here and returns early (creating NO quiz objects) if this
+            # folder is absent. The non-CC format uses a nested section structure.
+            non_cc_qti = generate_non_cc_qti(quiz)
+            (non_cc_dir / f"{quiz.identifier}.xml.qti").write_text(non_cc_qti, encoding="utf-8")
 
             print(f"[cartridge] Generated quiz: {quiz.title} ({len(quiz.questions)} questions)")
 
