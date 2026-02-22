@@ -1219,7 +1219,13 @@ def add_module_to_org(organization: ET.Element, module: ModuleItem, export: Cart
 
 
 def add_content_resource(resources: ET.Element, item: ContentItem, ns: str):
-    """Add a content item as a resource."""
+    """Add a content item as a resource.
+
+    File layout mirrors Canvas CC export:
+    - Pages:       wiki_content/{id}.html
+    - Assignments: web_resources/{id}/content.html + assignment_settings.xml
+    - Links:       manifest href only (no file)
+    """
     resource = ET.SubElement(resources, f"{{{ns}}}resource")
     resource.set("identifier", item.identifier)
     resource.set("type", get_resource_type(item.item_type))
@@ -1227,16 +1233,15 @@ def add_content_resource(resources: ET.Element, item: ContentItem, ns: str):
     if item.item_type == "link":
         resource.set("href", item.meta.get("external_url", ""))
     elif item.item_type == "assignment":
-        # Canvas CC format: href points to the HTML content file (not the settings XML)
         resource.set("href", f"web_resources/{item.identifier}/content.html")
     else:
-        resource.set("href", f"web_resources/{item.identifier}/content.html")
+        # Pages and files: Canvas expects webcontent in wiki_content/ directory
+        resource.set("href", f"wiki_content/{item.identifier}.html")
 
-    # Add file references
+    # File references
     if item.item_type == "link":
-        pass  # Links don't have files
+        pass  # External links have no files
     elif item.item_type == "assignment":
-        # Canvas CC format: HTML content first, settings XML second
         file_elem = ET.SubElement(resource, f"{{{ns}}}file")
         file_elem.set("href", f"web_resources/{item.identifier}/content.html")
         file_elem = ET.SubElement(resource, f"{{{ns}}}file")
@@ -1246,18 +1251,36 @@ def add_content_resource(resources: ET.Element, item: ContentItem, ns: str):
             file_elem.set("href", f"web_resources/{item.identifier}/rubric.xml")
     else:
         file_elem = ET.SubElement(resource, f"{{{ns}}}file")
-        file_elem.set("href", f"web_resources/{item.identifier}/content.html")
+        file_elem.set("href", f"wiki_content/{item.identifier}.html")
 
 
 def add_quiz_resource(resources: ET.Element, quiz: QuizItem, ns: str):
-    """Add a quiz as a resource."""
+    """Add a quiz as a resource.
+
+    Canvas CC format requires two resources per quiz:
+    1. QTI assessment resource (the questions)
+    2. assessment_meta.xml companion resource (Canvas quiz settings),
+       linked via <dependency> from the QTI resource.
+    """
+    meta_id = f"{quiz.identifier}_meta"
+
+    # QTI resource — questions
     resource = ET.SubElement(resources, f"{{{ns}}}resource")
     resource.set("identifier", quiz.identifier)
     resource.set("type", "imsqti_xmlv1p2/imscc_xmlv1p1/assessment")
-    resource.set("href", f"assessments/{quiz.identifier}/assessment.xml")
-
+    # Canvas exports have no href on the QTI resource itself
     file_elem = ET.SubElement(resource, f"{{{ns}}}file")
-    file_elem.set("href", f"assessments/{quiz.identifier}/assessment.xml")
+    file_elem.set("href", f"assessments/{quiz.identifier}/assessment_qti.xml")
+    dep = ET.SubElement(resource, f"{{{ns}}}dependency")
+    dep.set("identifierref", meta_id)
+
+    # assessment_meta resource — Canvas quiz settings
+    meta_resource = ET.SubElement(resources, f"{{{ns}}}resource")
+    meta_resource.set("identifier", meta_id)
+    meta_resource.set("type", "associatedcontent/imscc_xmlv1p1/learning-application-resource")
+    meta_resource.set("href", f"assessments/{quiz.identifier}/assessment_meta.xml")
+    meta_file = ET.SubElement(meta_resource, f"{{{ns}}}file")
+    meta_file.set("href", f"assessments/{quiz.identifier}/assessment_meta.xml")
 
 
 def add_asset_resource(resources: ET.Element, asset: Path, ns: str):
@@ -1288,6 +1311,63 @@ def get_resource_type(item_type: str) -> str:
 # ============================================================================
 # Assignment XML Generation
 # ============================================================================
+
+def generate_assessment_meta_xml(quiz: QuizItem) -> str:
+    """
+    Generate assessment_meta.xml — Canvas-specific quiz settings companion.
+
+    Canvas requires this alongside the QTI file to create a proper quiz object.
+    Without it Canvas cannot import the quiz at all.
+    """
+    root = ET.Element("quiz")
+    root.set("identifier", quiz.identifier)
+    root.set("xmlns", "http://canvas.instructure.com/xsd/cccv1p0")
+    root.set("xmlns:xsi", NS["xsi"])
+    root.set("xsi:schemaLocation",
+             "http://canvas.instructure.com/xsd/cccv1p0 "
+             "https://canvas.instructure.com/xsd/cccv1p0.xsd")
+
+    meta = quiz.meta
+
+    ET.SubElement(root, "title").text = quiz.title
+
+    # Description — HTML of quiz instructions
+    desc_html = markdown.markdown(quiz.description, extensions=['extra']) if quiz.description else ""
+    ET.SubElement(root, "description").text = desc_html
+
+    ET.SubElement(root, "shuffle_answers").text = str(meta.get("shuffle_answers", True)).lower()
+    ET.SubElement(root, "scoring_policy").text = meta.get("scoring_policy", "keep_highest")
+    ET.SubElement(root, "hide_results")
+    ET.SubElement(root, "quiz_type").text = meta.get("quiz_type", "assignment")
+    ET.SubElement(root, "points_possible").text = str(
+        float(meta.get("points_possible", len(quiz.questions)))
+    )
+    ET.SubElement(root, "require_lockdown_browser").text = "false"
+    ET.SubElement(root, "require_lockdown_browser_for_results").text = "false"
+    ET.SubElement(root, "require_lockdown_browser_monitor").text = "false"
+    ET.SubElement(root, "lockdown_browser_monitor_data")
+    ET.SubElement(root, "show_correct_answers").text = str(
+        meta.get("show_correct_answers", True)
+    ).lower()
+    ET.SubElement(root, "anonymous_submissions").text = "false"
+    ET.SubElement(root, "could_be_locked").text = "false"
+
+    time_limit = meta.get("time_limit", "")
+    ET.SubElement(root, "time_limit").text = str(time_limit) if time_limit else ""
+
+    ET.SubElement(root, "disable_timer_autosubmission").text = "false"
+    ET.SubElement(root, "allowed_attempts").text = str(meta.get("allowed_attempts", 1))
+    ET.SubElement(root, "one_question_at_a_time").text = "false"
+    ET.SubElement(root, "cant_go_back").text = "false"
+    ET.SubElement(root, "available").text = "false"
+    ET.SubElement(root, "one_time_results").text = "false"
+    ET.SubElement(root, "show_correct_answers_last_attempt").text = "false"
+    ET.SubElement(root, "only_visible_to_overrides").text = "false"
+    ET.SubElement(root, "module_locked").text = "false"
+    ET.SubElement(root, "assignment_overrides")
+
+    return prettify_xml(root)
+
 
 def generate_assignment_settings_xml(item: ContentItem) -> str:
     """
@@ -1407,6 +1487,7 @@ def build_cartridge(export: CartridgeExport, output_path: Path):
 
     try:
         # Create directory structure
+        (temp_dir / "wiki_content").mkdir()
         (temp_dir / "web_resources").mkdir()
         (temp_dir / "assessments").mkdir()
         (temp_dir / "course_settings").mkdir()
@@ -1426,28 +1507,31 @@ def build_cartridge(export: CartridgeExport, output_path: Path):
 
         # Generate content items
         for item in export.content_items:
-            item_dir = temp_dir / "web_resources" / item.identifier
-            item_dir.mkdir(parents=True, exist_ok=True)
-
             if item.item_type == "link":
-                # Web links get their own XML
-                weblink_xml = generate_weblink_xml(item)
-                (item_dir / "weblink.xml").write_text(weblink_xml, encoding="utf-8")
-            elif item.item_type == "assignment":
-                # Canvas CC format: content.html is primary, assignment_settings.xml is companion
+                # External links need no file — href in manifest is the URL
+                print(f"[cartridge] Generated {item.item_type}: {item.title}")
+                continue
+
+            if item.item_type == "assignment":
+                item_dir = temp_dir / "web_resources" / item.identifier
+                item_dir.mkdir(parents=True, exist_ok=True)
+            # (pages go to wiki_content/ — no item_dir needed)
+
+            if item.item_type == "assignment":
+                # Canvas CC format: content.html primary, assignment_settings.xml companion
                 content_html = generate_content_html(item)
                 (item_dir / "content.html").write_text(content_html, encoding="utf-8")
-
                 assignment_xml = generate_assignment_settings_xml(item)
                 (item_dir / "assignment_settings.xml").write_text(assignment_xml, encoding="utf-8")
-
                 if item.rubric:
                     rubric_xml = generate_rubric_xml(item.rubric, item.identifier)
                     (item_dir / "rubric.xml").write_text(rubric_xml, encoding="utf-8")
             else:
-                # Pages and files get HTML content
+                # Pages/files: Canvas expects webcontent in wiki_content/ (flat)
                 content_html = generate_content_html(item)
-                (item_dir / "content.html").write_text(content_html, encoding="utf-8")
+                (temp_dir / "wiki_content" / f"{item.identifier}.html").write_text(
+                    content_html, encoding="utf-8"
+                )
 
             print(f"[cartridge] Generated {item.item_type}: {item.title}")
 
@@ -1456,8 +1540,14 @@ def build_cartridge(export: CartridgeExport, output_path: Path):
             quiz_dir = temp_dir / "assessments" / quiz.identifier
             quiz_dir.mkdir(parents=True, exist_ok=True)
 
+            # QTI file (questions)
             qti_xml = generate_qti_assessment(quiz)
-            (quiz_dir / "assessment.xml").write_text(qti_xml, encoding="utf-8")
+            (quiz_dir / "assessment_qti.xml").write_text(qti_xml, encoding="utf-8")
+
+            # Canvas assessment_meta.xml (quiz settings — required for Canvas to create the quiz)
+            meta_xml = generate_assessment_meta_xml(quiz)
+            (quiz_dir / "assessment_meta.xml").write_text(meta_xml, encoding="utf-8")
+
             print(f"[cartridge] Generated quiz: {quiz.title} ({len(quiz.questions)} questions)")
 
         # Copy assets
