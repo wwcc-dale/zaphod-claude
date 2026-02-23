@@ -35,24 +35,10 @@ the first step before building the cartridge. This is a purely local step
 correctly-processed build artifacts. The cartridge builder then reads those
 instead of re-implementing the logic.
 
-**Longer-term target architecture**
+**Longer-term target architecture** ← *implemented 2026-02*
 
-Mirror the sync pipeline exactly, with an export twin for each sync step:
-
-```
-frontmatter_to_meta.py   →  meta.json per item          (shared with sync)
-export_pages.py          →  wiki_content/{id}.html
-export_assignments.py    →  web_resources/{id}/
-export_banks.py          →  non_cc_assessments/
-export_quizzes.py        →  assessments/{id}/
-export_modules.py        →  module_meta.xml, imsmanifest.xml, course_settings/
-assemble_cartridge.py    →  zip everything into .imscc
-```
-
-Each export step mirrors its sync counterpart. The manifest assembly happens
-last once all content files are written. This makes the export robust to
-pipeline changes and removes all duplicated loading logic from
-`export_cartridge.py`.
+Mirror the sync pipeline exactly, with an export twin for each sync step.
+**This architecture has now been implemented.** See next decision entry.
 
 **Rejected alternatives**
 
@@ -96,3 +82,87 @@ the settings resource in `imsmanifest.xml`.**
 
 - Standard CC 1.x: imports pages as file attachments, not Canvas Pages; no
   native quiz support; module structure limited.
+
+---
+
+## Step-by-step Export Pipeline
+
+### Decision: refactor export into independent per-step modules (2026-02)
+
+**Context**
+
+The original `export_cartridge.py` was a monolithic ~1900-line script that
+re-implemented content loading, variable/include expansion, module resolution,
+and question parsing — all logic that already lives correctly in the sync
+pipeline. Every pipeline improvement (new frontmatter key, new content type,
+include resolution change) had to be manually replicated in the export and
+could silently diverge.
+
+**Decision**
+
+Refactor the export into a step-by-step pipeline that mirrors the sync pipeline
+exactly. Shared state is passed via a staging directory and a manifest JSON file
+(`_course_metadata/exports/.export_manifest.json`).
+
+**New file layout:**
+
+| File | Role |
+|------|------|
+| `export_types.py` | `ExportManifest`, `ExportResource`, `ExportOrgItem` dataclasses + shared utilities |
+| `export_pages.py` | Step 2 — `wiki_content/{id}.html` for pages/files/links |
+| `export_assignments.py` | Step 3 — `web_resources/{id}/` for assignments + rubrics |
+| `export_quizzes.py` | Step 4 — `assessments/` + `non_cc_assessments/` |
+| `export_modules.py` | Step 5 — `course_settings/module_meta.xml` + org items in manifest |
+| `export_settings.py` | Step 6 — `course_settings/` CE files |
+| `export_outcomes.py` | Step 7 — `{name}.outcomes.csv` alongside .imscc (not in zip) |
+| `assemble_cartridge.py` | Step 8 — `imsmanifest.xml` + zip → `.imscc` |
+| `export_cartridge.py` | Orchestrator only: init → step 1 (optional) → steps 2–8 |
+
+**Key design invariants:**
+
+- `frontmatter_to_meta.py` is always step 1 when running standalone. Export
+  steps never read raw `index.md` — only `meta.json` + `source.md`.
+- Staging dir is a clean rebuild: each `export_cartridge.py` invocation wipes
+  and recreates `.staging/`. Incremental export is a future concern.
+- No Canvas API calls in any export step.
+- `assemble_cartridge.py` is the only step that writes `imsmanifest.xml` and
+  the `.imscc`.
+- Each step is idempotent — re-running overwrites its prior staging files.
+- Each step reads the manifest JSON to discover `staging_dir`; writes it back
+  with new entries appended.
+- Quiz identifiers are now deterministic (`generate_content_id(folder)` instead
+  of random `generate_id("quiz")`), giving stable IDs across export runs.
+- `--watch-mode` and `--skip-meta` flags skip step 1 (the sync pipeline already
+  ran `frontmatter_to_meta.py`).
+
+**Shared state: manifest JSON schema:**
+
+```json
+{
+  "identifier": "cc_abc123def456",
+  "title": "JavaScript Cards",
+  "staging_dir": "/abs/.../exports/.staging",
+  "output_path": "/abs/.../exports/20260222_153045_export.imscc",
+  "resources": [
+    {"identifier": "i1234", "type": "webcontent",
+     "href": "wiki_content/i1234.html", "files": [...], "dependency": null}
+  ],
+  "org_items": [
+    {"identifier": "m1", "title": "Week 1", "position": 1,
+     "children": [{"identifier": "item_i1234", "identifierref": "i1234", "title": "Intro"}]}
+  ],
+  "settings_resource_files": [
+    "course_settings/canvas_export.txt",
+    "course_settings/course_settings.xml",
+    "course_settings/module_meta.xml",
+    "course_settings/assignment_groups.xml"
+  ]
+}
+```
+
+**Rejected alternatives:**
+
+- Keep `export_cartridge.py` as a self-contained loader: fragile — diverges
+  from pipeline behaviour every time the pipeline gains a new feature.
+- Subprocess per step (like `watch_and_publish.py`): unnecessary overhead for
+  a fully local pipeline; direct module import is simpler and equally debuggable.
