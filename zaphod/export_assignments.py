@@ -135,9 +135,9 @@ def generate_assignment_settings_xml(identifier: str, title: str,
     root.set("identifier", identifier)
 
     add_text_element(root, "title", title)
-    add_text_element(root, "due_at", "")
-    add_text_element(root, "lock_at", "")
-    add_text_element(root, "unlock_at", "")
+    add_text_element(root, "due_at", meta.get("due_at", "") or "")
+    add_text_element(root, "lock_at", meta.get("lock_at", "") or "")
+    add_text_element(root, "unlock_at", meta.get("unlock_at", "") or "")
     add_text_element(root, "module_locked", "false")
     add_text_element(root, "workflow_state",
                      "published" if meta.get("published") else "unpublished")

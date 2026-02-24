@@ -182,6 +182,35 @@ can accept the file via a native file picker and POST the content directly.
 
 ---
 
+## Sync ↔ Export Parity Rule
+
+**When a frontmatter field or content feature is added or changed in one pipeline, it must be reflected in the other.**
+
+| Pipeline | Files |
+|----------|-------|
+| Sync | `sync_modules.py`, `canvas_publish.py` |
+| Export | `export_assignments.py`, `export_quizzes.py`, `export_pages.py`, `export_modules.py` |
+
+### Why this matters
+
+Sync pushes live data to Canvas. Export generates a portable cartridge for Canvas import. A course round-tripped through export→import should behave identically to one that was synced directly. If a field is honoured by sync but silently dropped by export (or vice versa), the cartridge becomes a lossy representation of the course.
+
+### Known gaps fixed
+
+| Field | Fixed in |
+|-------|----------|
+| `indent` | `export_modules.py` — was hardcoded `"0"`; now reads from `meta.json` |
+| `due_at` / `lock_at` / `unlock_at` | `export_assignments.py` — were hardcoded empty; now reads from `meta.json` |
+
+### Checklist when adding a new frontmatter field
+
+- [ ] `frontmatter_to_meta.py` passes it through to `meta.json`
+- [ ] `canvas_publish.py` or `sync_modules.py` sends it to Canvas API (sync path)
+- [ ] Appropriate `export_*.py` reads it from `meta` and writes it to XML (export path)
+- [ ] Documented in `user-guide/`
+
+---
+
 ## Versioning Approach
 
 When a set of changes is stable enough to converge:
