@@ -247,9 +247,10 @@ def build_module_structure(
             if inferred:
                 modules = [inferred]
 
+        indent = int(meta.get("indent", 0))
         for module_name in modules:
             key = _item_sort_key(folder, meta)
-            module_entries[module_name].append((key, identifier, title))
+            module_entries[module_name].append((key, identifier, title, indent))
 
         id_info[identifier] = {
             "content_type": CANVAS_CONTENT_TYPE.get(item_type, "WikiPage"),
@@ -266,9 +267,10 @@ def build_module_structure(
         fm_modules: List[str] = meta.get("modules", [])
         all_modules = fm_modules if fm_modules else ([module_name] if module_name else [])
 
+        indent = int(meta.get("indent", 0))
         for m_name in all_modules:
             key = _item_sort_key(quiz_folder, meta)
-            module_entries[m_name].append((key, identifier, title))
+            module_entries[m_name].append((key, identifier, title, indent))
 
         id_info[identifier] = {
             "content_type": "Quizzes::Quiz",
@@ -293,11 +295,12 @@ def build_module_structure(
 
         # Sort items within the module
         entries.sort(key=lambda e: e[0])
-        for _, identifier, title in entries:
+        for _, identifier, title, indent in entries:
             module_map[module_name].children.append(ExportOrgChild(
                 identifier=f"item_{identifier}",
                 identifierref=identifier,
                 title=title,
+                indent=indent,
             ))
 
     org_items = sorted(module_map.values(), key=lambda m: m.position)
@@ -350,7 +353,7 @@ def generate_module_meta_xml(org_items: List[ExportOrgItem],
                 ET.SubElement(item_elem, "url").text = info["url"]
             ET.SubElement(item_elem, "position").text = str(item_pos)
             ET.SubElement(item_elem, "new_tab").text = info.get("new_tab", "false")
-            ET.SubElement(item_elem, "indent").text = "0"
+            ET.SubElement(item_elem, "indent").text = str(child.indent)
             ET.SubElement(item_elem, "link_settings_json").text = "null"
 
     return prettify_xml(root)

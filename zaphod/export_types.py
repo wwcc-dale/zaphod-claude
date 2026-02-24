@@ -117,12 +117,14 @@ class ExportOrgChild:
     identifier: str      # "item_{identifierref}"
     identifierref: str   # points to an ExportResource.identifier
     title: str
+    indent: int = 0      # Canvas indent level (0, 1, or 2)
 
     def to_dict(self) -> dict:
         return {
             "identifier": self.identifier,
             "identifierref": self.identifierref,
             "title": self.title,
+            "indent": self.indent,
         }
 
     @classmethod
@@ -131,6 +133,7 @@ class ExportOrgChild:
             identifier=d["identifier"],
             identifierref=d["identifierref"],
             title=d["title"],
+            indent=d.get("indent", 0),
         )
 
 
