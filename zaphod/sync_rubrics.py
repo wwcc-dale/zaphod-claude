@@ -369,7 +369,9 @@ def build_rubric_payload(
         c_long = crit.get("long_description", "")
         c_points = crit.get("points")
         c_use_range = bool(crit.get("use_range", False))
-        c_outcome_code = crit.get("outcome_code")  # NEW: outcome alignment
+        # Outcome alignment: 'outcomes' list (vendor_guids, new) or 'outcome_code' (legacy)
+        c_outcomes: list = crit.get("outcomes") or []
+        c_outcome_code = crit.get("outcome_code")  # legacy single string
         ratings = crit.get("ratings") or []
 
         if c_desc is None or c_points is None or not ratings:
@@ -382,17 +384,21 @@ def build_rubric_payload(
         data[f"{base}[long_description]"] = str(c_long)
         data[f"{base}[points]"] = str(c_points)
         data[f"{base}[criterion_use_range]"] = "1" if c_use_range else "0"
-        
-        # NEW: Add learning outcome association if outcome_code is specified
-        if c_outcome_code:
+
+        # Resolve outcome alignment (Canvas supports one outcome per criterion)
+        guids_to_try = [str(g) for g in c_outcomes] if c_outcomes else (
+            [str(c_outcome_code)] if c_outcome_code else []
+        )
+        if guids_to_try:
             outcome_map = load_outcome_map()
-            outcome_id = outcome_map.get(str(c_outcome_code))
-            if outcome_id:
-                data[f"{base}[learning_outcome_id]"] = str(outcome_id)
-                print(f" Criterion '{c_desc}' aligned to {c_outcome_code} (ID {outcome_id})")
-            else:
-                print(f"⚠️ Criterion '{c_desc}' references unknown outcome '{c_outcome_code}'")
-                print(f"             Add it to outcome_map.json: {{\"{c_outcome_code}\": <canvas_outcome_id>}}")
+            for guid in guids_to_try:
+                outcome_id = outcome_map.get(guid)
+                if outcome_id:
+                    data[f"{base}[learning_outcome_id]"] = str(outcome_id)
+                    print(f"  Criterion '{c_desc}' aligned to {guid} (Canvas ID {outcome_id})")
+                    break
+                else:
+                    print(f"⚠️ Criterion '{c_desc}': outcome '{guid}' not in outcome_map.json")
 
         for j, rating in enumerate(ratings):
             r_desc = rating.get("description")

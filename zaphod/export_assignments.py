@@ -207,6 +207,14 @@ def generate_rubric_xml(rubric: Dict[str, Any], assignment_id: str) -> str:
                          criterion.get("long_description", ""))
         add_text_element(crit_elem, "points", str(criterion.get("points", 0)))
 
+        # Outcome alignment: emit one <learning_outcome_foreign_guid> per vendor_guid
+        # 'outcomes' list (new) or 'outcome_code' scalar (legacy)
+        outcome_guids: list = list(criterion.get("outcomes") or [])
+        if not outcome_guids and criterion.get("outcome_code"):
+            outcome_guids = [str(criterion["outcome_code"])]
+        for guid in outcome_guids:
+            add_text_element(crit_elem, "learning_outcome_foreign_guid", str(guid))
+
         ratings_elem = ET.SubElement(crit_elem, "ratings")
         for j, rating in enumerate(criterion.get("ratings", [])):
             rating_elem = ET.SubElement(ratings_elem, "rating")
