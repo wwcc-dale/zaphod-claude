@@ -26,6 +26,11 @@ import markdown
 from canvasapi.course import Course
 
 from zaphod.security_utils import is_safe_path
+from zaphod.frontmatter_to_meta import (
+    load_shared_variables,
+    interpolate_body,
+    interpolate_includes,
+)
 
 
 # ============================================================================
@@ -157,16 +162,30 @@ def apply_templates(source_markdown: str, course_root: Path, meta: Dict[str, Any
             extensions=['extra', 'codehilite', 'toc', 'nl2br']
         )
 
+    # Build merged variable scope: program → course → page (same precedence as source.md)
+    variables = load_shared_variables()
+    variables.update(meta)
+
     # STEP 1: Combine all MARKDOWN first (before HTML conversion)
+    # Apply variable + include interpolation to template files so they support
+    # {{var:...}} and {{include:...}} with the same resolution as source.md.
     markdown_parts = []
 
     if templates["header_md"]:
-        markdown_parts.append(templates["header_md"])
+        header = interpolate_includes(templates["header_md"], course_root, variables)
+        header = interpolate_body(header, variables)
+        markdown_parts.append(
+            f"<!-- {{{{template:header}}}} -->\n{header}\n<!-- {{{{/template:header}}}} -->"
+        )
 
     markdown_parts.append(source_markdown)
 
     if templates["footer_md"]:
-        markdown_parts.append(templates["footer_md"])
+        footer = interpolate_includes(templates["footer_md"], course_root, variables)
+        footer = interpolate_body(footer, variables)
+        markdown_parts.append(
+            f"<!-- {{{{template:footer}}}} -->\n{footer}\n<!-- {{{{/template:footer}}}} -->"
+        )
 
     # STEP 2: Convert combined markdown to HTML in single pass
     combined_markdown = "\n\n".join(markdown_parts)
