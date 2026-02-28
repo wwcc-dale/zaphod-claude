@@ -116,6 +116,30 @@ def sanitize_filename(name: str, max_length: int = 80) -> str:
     return s
 
 
+def sanitize_module_folder_name(name: str) -> str:
+    """
+    Make a Canvas module name safe for use as a folder name component.
+
+    Only replaces characters that are genuinely unsafe on macOS/Linux
+    (forward slash). All other characters — colons, parens, spaces —
+    are preserved so that infer_module_from_path() can reconstruct the
+    exact Canvas module name from the folder name.
+
+    Examples:
+        "Week 1: Introduction"  -> "Week 1: Introduction"
+        "CS 101/102 Overview"   -> "CS 101-102 Overview"
+
+    Args:
+        name: Canvas module name
+
+    Returns:
+        Folder-safe name (preserves original case and most punctuation)
+    """
+    s = name.replace("/", "-")
+    s = s.strip(". ")  # no leading/trailing dots or spaces
+    return s or "module"
+
+
 # =============================================================================
 # Canvas Data Fetchers
 # =============================================================================
@@ -228,25 +252,39 @@ def fetch_quizzes(course: Course) -> List[Quiz]:
 # Module Mapping System
 # =============================================================================
 
-def build_module_mapping(modules: List[Module]) -> Tuple[Dict[str, List[str]], Dict[int, List[str]]]:
+def build_module_mapping(
+    modules: List[Module],
+) -> Tuple[
+    Dict[str, List[str]],   # url_to_modules:    page_url    -> [module_names]
+    Dict[int, List[str]],   # id_to_modules:     content_id  -> [module_names]
+    Dict[str, int],         # url_to_position:   page_url    -> position in primary module
+    Dict[int, int],         # id_to_position:    content_id  -> position in primary module
+    Dict[str, str],         # module_folder_map: module_name -> folder name (e.g. "01-Intro.module")
+]:
     """
-    Build bidirectional mapping of content items to modules.
+    Build module membership and folder structure mappings.
 
-    Canvas uses two types of identifiers:
-    - Pages: mapped by URL (page_url)
-    - Assignments/Quizzes: mapped by content ID (content_id)
+    Canvas items are mapped by:
+    - Pages: page_url
+    - Assignments/Quizzes: content_id
 
-    Args:
-        modules: List of Canvas Module objects with items loaded
+    For each item the *primary* module is the first module it appears in
+    (Canvas returns modules in display order). The item will be placed
+    inside that module's .module/ folder so infer_module_from_path()
+    can imply the membership without an explicit modules: key.
 
-    Returns:
-        Tuple of (url_to_modules, id_to_modules) dictionaries
+    Returns a 5-tuple; see type annotations above.
     """
-    url_to_modules: Dict[str, List[str]] = {}  # page_url -> [module_names]
-    id_to_modules: Dict[int, List[str]] = {}   # content_id -> [module_names]
+    url_to_modules: Dict[str, List[str]] = {}
+    id_to_modules: Dict[int, List[str]] = {}
+    url_to_position: Dict[str, int] = {}
+    id_to_position: Dict[int, int] = {}
+    module_folder_map: Dict[str, str] = {}
 
-    for module in modules:
+    for mod_pos, module in enumerate(modules, start=1):
         module_name = module.name
+        safe_name = sanitize_module_folder_name(module_name)
+        module_folder_map[module_name] = f"{mod_pos:02d}-{safe_name}.module"
 
         try:
             items = list(module.get_module_items())
@@ -255,111 +293,164 @@ def build_module_mapping(modules: List[Module]) -> Tuple[Dict[str, List[str]], D
             continue
 
         for item in items:
-            # Page items (mapped by URL)
+            item_position = getattr(item, "position", 0)
+
             if item.type == "Page" and hasattr(item, "page_url"):
                 page_url = item.page_url
                 if page_url not in url_to_modules:
                     url_to_modules[page_url] = []
+                    url_to_position[page_url] = item_position  # primary module position
                 url_to_modules[page_url].append(module_name)
 
-            # Assignment/Quiz items (mapped by content_id)
             elif item.type in ("Assignment", "Quiz") and hasattr(item, "content_id"):
                 content_id = item.content_id
                 if content_id not in id_to_modules:
                     id_to_modules[content_id] = []
+                    id_to_position[content_id] = item_position  # primary module position
                 id_to_modules[content_id].append(module_name)
 
-    return url_to_modules, id_to_modules
+    return url_to_modules, id_to_modules, url_to_position, id_to_position, module_folder_map
 
 
 # =============================================================================
 # Content Creators
 # =============================================================================
 
+def _resolve_item_dir(
+    content_dir: Path,
+    folder_name: str,
+    ext: str,
+    modules: List[str],
+    module_folder_map: Dict[str, str],
+    item_position: Optional[int] = None,
+) -> Path:
+    """
+    Return the target .{ext} folder path, creating any .module parent as needed.
+
+    Naming convention for modueled items:
+        {nn}-s{mm}-{existing-name}.{ext}
+    where:
+        nn = item position within the module, 2-digit zero-padded (01, 02 …)
+        mm = module/session number, 2-digit zero-padded (s01, s02 …)
+
+    Examples:
+        content/01-Introduction.module/01-s01-welcome.page
+        content/02-Week-1.module/03-s02-quiz-1.quiz
+
+    For items that belong to more than one module the caller writes an
+    explicit modules: key; the .module folder still provides primary org.
+
+    Unmoduled items land directly in content/ with no prefix.
+    """
+    if modules:
+        primary = modules[0]
+        module_folder = module_folder_map.get(primary)
+        if module_folder:
+            parent = content_dir / module_folder
+            parent.mkdir(parents=True, exist_ok=True)
+
+            # Extract module number from the folder prefix (e.g. "03-Week 1.module" → 3)
+            try:
+                mod_num = int(module_folder.split("-")[0])
+            except (ValueError, IndexError):
+                mod_num = 0
+
+            pos_str = f"{item_position:02d}-" if item_position is not None else ""
+            sess_str = f"s{mod_num:02d}-" if mod_num > 0 else ""
+            return parent / f"{pos_str}{sess_str}{folder_name}.{ext}"
+
+    return content_dir / f"{folder_name}.{ext}"
+
+
 def create_page(
     page: Page,
-    output_dir: Path,
-    url_to_modules: Dict[str, List[str]]
+    content_dir: Path,
+    url_to_modules: Dict[str, List[str]],
+    url_to_position: Dict[str, int],
+    module_folder_map: Dict[str, str],
 ) -> None:
     """
     Create a .page folder with index.md for a Canvas page.
 
-    Args:
-        page: Canvas Page object
-        output_dir: Output directory (content/)
-        url_to_modules: Mapping of page URLs to module names
+    The folder is placed inside the primary module's .module/ directory so
+    that module membership is implied by path (infer_module_from_path).
+    An explicit modules: key is only written when the page belongs to more
+    than one module.
     """
-    # Sanitize page name for folder
     folder_name = sanitize_filename(page.title)
-    page_dir = output_dir / f"{folder_name}.page"
+    modules = url_to_modules.get(page.url, [])
+    position = url_to_position.get(page.url)
+
+    page_dir = _resolve_item_dir(
+        content_dir, folder_name, "page", modules, module_folder_map, position
+    )
     page_dir.mkdir(parents=True, exist_ok=True)
 
-    # Get module membership
-    modules = url_to_modules.get(page.url, [])
-
-    # Build frontmatter
-    frontmatter = {
+    frontmatter: Dict[str, Any] = {
         "type": "page",
         "name": page.title,
         "published": getattr(page, "published", True),
     }
 
-    if modules:
+    # Position within primary module (drives ordering in export_modules)
+    if position is not None:
+        frontmatter["position"] = position
+
+    # Only write explicit modules: when item spans multiple modules.
+    # For single-module items the folder path implies membership.
+    if len(modules) > 1:
         frontmatter["modules"] = modules
-        # Default indent to 0 for simplicity
-        frontmatter["indent"] = 0
 
     # Convert HTML body to markdown
     body = ""
     if hasattr(page, "body") and page.body:
         body = html_to_markdown(page.body)
 
-    # Write index.md
     index_path = page_dir / "index.md"
-    content = f"---\n{yaml.dump(frontmatter, sort_keys=False)}---\n\n{body}\n"
-    index_path.write_text(content, encoding="utf-8")
+    index_path.write_text(
+        f"---\n{yaml.dump(frontmatter, sort_keys=False)}---\n\n{body}\n",
+        encoding="utf-8",
+    )
 
-    # Create meta.json for Canvas ID tracking
-    meta = {
-        "canvas_id": page.page_id,
-        "page_url": page.url,
-    }
+    # meta.json for Canvas ID tracking (not frontmatter — kept separate)
     meta_path = page_dir / "meta.json"
-    meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+    meta_path.write_text(
+        json.dumps({"canvas_id": page.page_id, "page_url": page.url}, indent=2),
+        encoding="utf-8",
+    )
 
-    print(f"{PAGE} Created: {page_dir.name}")
+    print(f"{PAGE} Created: {page_dir.relative_to(content_dir)}")
 
 
 def create_assignment(
     assignment: Assignment,
-    output_dir: Path,
-    id_to_modules: Dict[int, List[str]]
+    content_dir: Path,
+    id_to_modules: Dict[int, List[str]],
+    id_to_position: Dict[int, int],
+    module_folder_map: Dict[str, str],
 ) -> None:
     """
     Create a .assignment folder with index.md and optional rubric.yaml.
 
-    Args:
-        assignment: Canvas Assignment object
-        output_dir: Output directory (content/)
-        id_to_modules: Mapping of assignment IDs to module names
+    Placed inside primary module's .module/ folder (implied membership).
+    Explicit modules: only written for multi-module assignments.
     """
-    # Sanitize assignment name for folder
     folder_name = sanitize_filename(assignment.name)
-    assignment_dir = output_dir / f"{folder_name}.assignment"
+    modules = id_to_modules.get(assignment.id, [])
+    position = id_to_position.get(assignment.id)
+
+    assignment_dir = _resolve_item_dir(
+        content_dir, folder_name, "assignment", modules, module_folder_map, position
+    )
     assignment_dir.mkdir(parents=True, exist_ok=True)
 
-    # Get module membership
-    modules = id_to_modules.get(assignment.id, [])
-
-    # Build frontmatter
-    frontmatter = {
+    frontmatter: Dict[str, Any] = {
         "type": "assignment",
         "name": assignment.name,
         "published": getattr(assignment, "published", True),
         "points_possible": getattr(assignment, "points_possible", 0),
     }
 
-    # Add optional fields
     if hasattr(assignment, "submission_types"):
         frontmatter["submission_types"] = assignment.submission_types
 
@@ -369,64 +460,62 @@ def create_assignment(
     if hasattr(assignment, "grading_type"):
         frontmatter["grading_type"] = assignment.grading_type
 
-    if modules:
-        frontmatter["modules"] = modules
-        frontmatter["indent"] = 0
+    if position is not None:
+        frontmatter["position"] = position
 
-    # Convert HTML description to markdown
+    if len(modules) > 1:
+        frontmatter["modules"] = modules
+
     body = ""
     if hasattr(assignment, "description") and assignment.description:
         body = html_to_markdown(assignment.description)
 
-    # Write index.md
     index_path = assignment_dir / "index.md"
-    content = f"---\n{yaml.dump(frontmatter, sort_keys=False)}---\n\n{body}\n"
-    index_path.write_text(content, encoding="utf-8")
+    index_path.write_text(
+        f"---\n{yaml.dump(frontmatter, sort_keys=False)}---\n\n{body}\n",
+        encoding="utf-8",
+    )
 
-    # Create meta.json for Canvas ID tracking
-    meta = {
-        "canvas_id": assignment.id,
-    }
     meta_path = assignment_dir / "meta.json"
-    meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+    meta_path.write_text(
+        json.dumps({"canvas_id": assignment.id}, indent=2), encoding="utf-8"
+    )
 
-    # Check for rubric
     if hasattr(assignment, "rubric") and assignment.rubric:
         create_rubric(assignment.rubric, assignment_dir)
 
-    print(f"{ASSIGNMENT} Created: {assignment_dir.name}")
+    print(f"{ASSIGNMENT} Created: {assignment_dir.relative_to(content_dir)}")
 
 
 def create_quiz(
     quiz: Quiz,
-    output_dir: Path,
-    id_to_modules: Dict[int, List[str]]
+    content_dir: Path,
+    id_to_modules: Dict[int, List[str]],
+    id_to_position: Dict[int, int],
+    module_folder_map: Dict[str, str],
 ) -> None:
     """
     Create a .quiz folder with index.md for a Canvas quiz.
 
-    Args:
-        quiz: Canvas Quiz object
-        output_dir: Output directory (content/)
-        id_to_modules: Mapping of quiz IDs to module names
+    Placed inside primary module's .module/ folder (implied membership).
+    Explicit modules: only written for multi-module quizzes.
     """
-    # Sanitize quiz name for folder
     folder_name = sanitize_filename(quiz.title)
-    quiz_dir = output_dir / f"{folder_name}.quiz"
+    modules = id_to_modules.get(quiz.id, [])
+    position = id_to_position.get(quiz.id)
+
+    quiz_dir = _resolve_item_dir(
+        content_dir, folder_name, "quiz", modules, module_folder_map, position
+    )
     quiz_dir.mkdir(parents=True, exist_ok=True)
 
-    # Get module membership
-    modules = id_to_modules.get(quiz.id, [])
-
-    # Build frontmatter
-    frontmatter = {
+    frontmatter: Dict[str, Any] = {
         "type": "quiz",
         "name": quiz.title,
         "published": getattr(quiz, "published", True),
         "points_possible": getattr(quiz, "points_possible", 0),
     }
 
-    # Add optional quiz-specific fields
     if hasattr(quiz, "quiz_type"):
         frontmatter["quiz_type"] = quiz.quiz_type
 
@@ -436,28 +525,28 @@ def create_quiz(
     if hasattr(quiz, "shuffle_answers"):
         frontmatter["shuffle_answers"] = quiz.shuffle_answers
 
-    if modules:
-        frontmatter["modules"] = modules
-        frontmatter["indent"] = 0
+    if position is not None:
+        frontmatter["position"] = position
 
-    # Convert HTML description to markdown
+    if len(modules) > 1:
+        frontmatter["modules"] = modules
+
     body = ""
     if hasattr(quiz, "description") and quiz.description:
         body = html_to_markdown(quiz.description)
 
-    # Write index.md
     index_path = quiz_dir / "index.md"
-    content = f"---\n{yaml.dump(frontmatter, sort_keys=False)}---\n\n{body}\n"
-    index_path.write_text(content, encoding="utf-8")
+    index_path.write_text(
+        f"---\n{yaml.dump(frontmatter, sort_keys=False)}---\n\n{body}\n",
+        encoding="utf-8",
+    )
 
-    # Create meta.json for Canvas ID tracking
-    meta = {
-        "canvas_id": quiz.id,
-    }
     meta_path = quiz_dir / "meta.json"
-    meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+    meta_path.write_text(
+        json.dumps({"canvas_id": quiz.id}, indent=2), encoding="utf-8"
+    )
 
-    print(f"{QUIZ} Created: {quiz_dir.name}")
+    print(f"{QUIZ} Created: {quiz_dir.relative_to(content_dir)}")
 
 
 def create_rubric(rubric_data: List[Dict[str, Any]], assignment_dir: Path) -> None:
@@ -607,7 +696,7 @@ def import_canvas_course(
         skip_quizzes: If True, skip quiz import
     """
     fence("Canvas Course Import")
-        print()
+    print()
 
     # Connect to Canvas
     print(f"{INFO} Connecting to Canvas API...")
@@ -632,7 +721,7 @@ def import_canvas_course(
 
     # Build module mappings
     fence("Building Module Mappings")
-    url_to_modules, id_to_modules = build_module_mapping(modules)
+    url_to_modules, id_to_modules, url_to_position, id_to_position, module_folder_map = build_module_mapping(modules)
     print(f"{SUCCESS} Mapped {len(url_to_modules)} pages and {len(id_to_modules)} assignments/quizzes to modules")
 
     # Create directory structure
@@ -652,14 +741,14 @@ def import_canvas_course(
     print(f"\n{PAGE} Creating pages...")
     for page in pages:
         try:
-            create_page(page, content_dir, url_to_modules)
+            create_page(page, content_dir, url_to_modules, url_to_position, module_folder_map)
         except Exception as e:
             print(f"{ERROR} Failed to create page '{page.title}': {e}")
 
     print(f"\n{ASSIGNMENT} Creating assignments...")
     for assignment in assignments:
         try:
-            create_assignment(assignment, content_dir, id_to_modules)
+            create_assignment(assignment, content_dir, id_to_modules, id_to_position, module_folder_map)
         except Exception as e:
             print(f"{ERROR} Failed to create assignment '{assignment.name}': {e}")
 
@@ -667,7 +756,7 @@ def import_canvas_course(
         print(f"\n{QUIZ} Creating quizzes...")
         for quiz in quizzes:
             try:
-                create_quiz(quiz, content_dir, id_to_modules)
+                create_quiz(quiz, content_dir, id_to_modules, id_to_position, module_folder_map)
             except Exception as e:
                 print(f"{ERROR} Failed to create quiz '{quiz.title}': {e}")
 
