@@ -4,15 +4,19 @@
 # Licensed under the MIT License. See LICENSE in the project root.
 
 """
-codify_order.py — Stamp position, session, modules, and course_order from folder names.
+codify_order.py — Stamp position, session, module, and course_order from folder names.
 
 Reads each content item's folder name and current frontmatter, then writes:
   - position:     1-based rank within the item's module (same sort key as export_modules.py)
   - session:      numeric session extracted from the s{nn} folder name component
-  - modules:      inferred from the nearest .module ancestor directory (if not already set)
+  - module:       integer from the numeric prefix of the nearest .module ancestor dir
 
 Also writes to shared/variables.yaml:
   - course_order: numeric prefix extracted from the course root directory name
+
+Note: `modules:` (list) is the legacy explicit module membership key and is left
+untouched — module membership continues to be inferred from directory structure
+at build time via infer_module_from_path().
 
 Designed to be run after `zaphod import` to lock in the derived ordering as
 explicit frontmatter values that survive renaming and feed template variables.
@@ -98,6 +102,33 @@ def stamp_course_variables(course_order: int, dry_run: bool, verbose: bool) -> b
 
 
 # ============================================================================
+# Module number extraction
+# ============================================================================
+
+def extract_module_number(folder: Path) -> Optional[int]:
+    """
+    Walk up from a content item folder, find the nearest .module ancestor,
+    and return its numeric prefix as an integer.
+
+    Examples (folder inside these .module dirs):
+      '01-HTML, CSS and DOM.module'     -> 1
+      '03-Card Game Implementation.module' -> 3
+      'My Module.module'                -> None  (no numeric prefix)
+      (no .module ancestor)             -> None
+    """
+    content_root = get_content_dir()
+    current = folder.parent
+
+    while current != content_root and current != current.parent:
+        if current.name.lower().endswith(".module"):
+            m = re.match(r"^(\d+)[_-]", current.name)
+            return int(m.group(1)) if m else None
+        current = current.parent
+
+    return None
+
+
+# ============================================================================
 # Session extraction
 # ============================================================================
 
@@ -155,14 +186,14 @@ def _apply(
     post: frontmatter.Post,
     position: int,
     session: Optional[int],
-    module: Optional[str],
+    module_number: Optional[int],
     dry_run: bool,
     verbose: bool,
     counts: dict,
 ) -> None:
     """
-    Write position, session (if detected), and modules (if not already set)
-    into index.md frontmatter. Only writes if values differ from what's there.
+    Write position, session (if detected), and module (if detected) into
+    index.md frontmatter. Only writes if values differ from what's there.
     """
     changed = False
     changes = []
@@ -180,11 +211,11 @@ def _apply(
             changes.append(f"session: {current_session!r} -> {session}")
             changed = True
 
-    if module is not None:
-        current_modules = post.metadata.get("modules")
-        if not current_modules:
-            post["modules"] = [module]
-            changes.append(f"modules: {current_modules!r} -> [{module!r}]")
+    if module_number is not None:
+        current_module = post.metadata.get("module")
+        if current_module != module_number:
+            post["module"] = module_number
+            changes.append(f"module: {current_module!r} -> {module_number}")
             changed = True
 
     if changed:
@@ -211,7 +242,7 @@ def codify_order(dry_run: bool = False, verbose: bool = False) -> dict:
       index.md frontmatter:
         position:  1-based rank within the item's module
         session:   from the s{nn} folder prefix (if present)
-        modules:   from the nearest .module ancestor dir (if not already set)
+        module:    integer from the numeric prefix of the nearest .module ancestor dir
 
       shared/variables.yaml:
         course_order: numeric prefix from the course root directory name (if present)
@@ -263,7 +294,8 @@ def codify_order(dry_run: bool = False, verbose: bool = False) -> dict:
             print(label)
         for position, (folder, post) in enumerate(group, start=1):
             session = extract_session(folder.name)
-            _apply(folder, post, position, session, module_name, dry_run, verbose, counts)
+            module_number = extract_module_number(folder)
+            _apply(folder, post, position, session, module_number, dry_run, verbose, counts)
 
     return counts
 
