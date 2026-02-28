@@ -41,6 +41,26 @@ COURSES_ROOT = SHARED_ROOT.parent
 COURSE_ROOT = Path.cwd()          # always "current course"
 
 
+def find_all_courses_dir() -> Path | None:
+    """
+    Locate the _all_courses/ program-level directory by walking up from the
+    current course root.
+
+    This approach is independent of where the zaphod module is installed,
+    so it works correctly whether zaphod is a symlink, editable install, or
+    anywhere else on the filesystem.
+
+    Returns the first _all_courses/ directory found, or None.
+    """
+    current = COURSE_ROOT
+    while current != current.parent:
+        candidate = current / "_all_courses"
+        if candidate.is_dir():
+            return candidate
+        current = current.parent
+    return None
+
+
 # =============================================================================
 # Content and Shared Directory Resolution
 # =============================================================================
@@ -163,20 +183,22 @@ def load_shared_variables() -> dict:
     variables = {}
     
     # Tier 1: _all_courses/shared/variables.yaml (lowest priority)
-    all_courses_paths = [
-        COURSES_ROOT.parent / "_all_courses" / "shared" / "variables.yaml",
-        COURSES_ROOT.parent / "_all_courses" / "shared" / "variables.yml",
-    ]
-    for path in all_courses_paths:
-        if path.is_file():
-            try:
-                data = yaml.safe_load(path.read_text(encoding="utf-8"))
-                if isinstance(data, dict):
-                    variables.update(data)
-                    print(f"ℹ️ Loaded global variables from {path}")
-            except Exception as e:
-                print(f"[variables:warn] Failed to load {path}: {e}")
-            break
+    all_courses = find_all_courses_dir()
+    if all_courses:
+        all_courses_paths = [
+            all_courses / "shared" / "variables.yaml",
+            all_courses / "shared" / "variables.yml",
+        ]
+        for path in all_courses_paths:
+            if path.is_file():
+                try:
+                    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+                    if isinstance(data, dict):
+                        variables.update(data)
+                        print(f"ℹ️ Loaded global variables from {path}")
+                except Exception as e:
+                    print(f"[variables:warn] Failed to load {path}: {e}")
+                break
     
     # Tier 2: <course>/shared/variables.yaml (course-specific, overrides global)
     course_paths = [
@@ -228,15 +250,16 @@ def resolve_include_path(folder: Path, name: str) -> Path | None:
     """
     content_root = get_content_dir()
     
+    all_courses = find_all_courses_dir()
     candidates = [
         # NEW: shared/ folder (preferred)
         COURSE_ROOT / "shared" / f"{name}.md",
-        COURSES_ROOT.parent / "_all_courses" / "shared" / f"{name}.md",
-        
+        *(([all_courses / "shared" / f"{name}.md"]) if all_courses else []),
+
         # LEGACY: includes/ folders (backward compatibility)
         content_root / "includes" / f"{name}.md",
         COURSE_ROOT / "includes" / f"{name}.md",
-        COURSES_ROOT.parent / "_all_courses" / "includes" / f"{name}.md",
+        *(([all_courses / "includes" / f"{name}.md"]) if all_courses else []),
     ]
     
     for path in candidates:
