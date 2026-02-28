@@ -44,6 +44,7 @@ from canvasapi.outcome import Outcome
 # Import Zaphod utilities
 from zaphod.canvas_client import make_canvas_api_obj
 from zaphod.config_utils import ConfigurationError
+from zaphod.frontmatter_to_meta import restore_zaphod_markers
 from zaphod.icons import (
     fence, SUCCESS, WARNING, INFO, ERROR,
     PAGE, ASSIGNMENT, QUIZ, MODULE, OUTCOME, DOWNLOAD, FOLDER
@@ -61,6 +62,10 @@ def html_to_markdown(html_content: str) -> str:
     """
     Convert Canvas HTML to markdown using html2text.
 
+    Restores {{var:name}} and {{include:name}} references from their
+    round-trip HTML comment markers before conversion, and strips any
+    template sections (header/footer) that were baked in at publish time.
+
     Args:
         html_content: HTML string from Canvas
 
@@ -69,6 +74,8 @@ def html_to_markdown(html_content: str) -> str:
     """
     if not html_content:
         return ""
+
+    html_content = restore_zaphod_markers(html_content)
 
     h = html2text.HTML2Text()
     h.body_width = 0  # Don't wrap lines

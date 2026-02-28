@@ -248,13 +248,16 @@ def resolve_include_path(folder: Path, name: str) -> Path | None:
 def interpolate_body(body: str, metadata: dict) -> str:
     """
     Replace {{var:key}} in the body with corresponding values from metadata.
+    Resolved values are wrapped in HTML comment markers so the import pipeline
+    can restore the original {{var:key}} reference on round-trip.
     If a key is missing, leave the placeholder as-is.
     """
     def replace(match):
         key = match.group(1)
         if key not in metadata:
             return match.group(0)
-        return str(metadata[key])
+        value = str(metadata[key])
+        return f"<!-- {{{{var:{key}}}}} -->{value}<!-- {{{{/var:{key}}}}} -->"
 
     return VAR_RE.sub(replace, body)
 
@@ -262,7 +265,7 @@ def interpolate_body(body: str, metadata: dict) -> str:
 def interpolate_includes(body: str, folder: Path, metadata: dict) -> str:
     """
     Replace {{include:name}} in the body with the contents of the first
-    matching include file, using the precedence rules in resolve_include_path.
+    matching include file, wrapped in HTML comment markers for round-trip import.
     Each included file is also processed with {{var:...}} interpolation.
     """
     def replace(match):
@@ -273,16 +276,49 @@ def interpolate_includes(body: str, folder: Path, metadata: dict) -> str:
             return match.group(0)
         try:
             inc_content = inc_path.read_text(encoding="utf-8")
-            # Apply {{var:...}} to the include content
             inc_content = interpolate_body(inc_content, metadata)
-            # Recursively expand any {{include:...}} inside the include
             inc_content = interpolate_includes(inc_content, folder, metadata)
-            return inc_content
+            return f"<!-- {{{{include:{name}}}}} -->\n{inc_content}\n<!-- {{{{/include:{name}}}}} -->"
         except Exception as e:
             print(f"⚠️ {folder.name}: failed to read include '{name}': {e}")
             return match.group(0)
 
     return INCLUDE_RE.sub(replace, body)
+
+
+# =============================================================================
+# Round-trip marker restoration (used by import pipeline)
+# =============================================================================
+
+_TEMPLATE_MARKER_RE = re.compile(
+    r'<!--\s*\{\{template:[^}]+\}\}\s*-->.*?<!--\s*\{\{/template:[^}]+\}\}\s*-->',
+    re.DOTALL,
+)
+_INCLUDE_MARKER_RE = re.compile(
+    r'<!--\s*\{\{include:([^}]+)\}\}\s*-->.*?<!--\s*\{\{/include:\1\}\}\s*-->',
+    re.DOTALL,
+)
+_VAR_MARKER_RE = re.compile(
+    r'<!--\s*\{\{var:([^}]+)\}\}\s*-->.*?<!--\s*\{\{/var:\1\}\}\s*-->',
+    re.DOTALL,
+)
+
+
+def restore_zaphod_markers(html: str) -> str:
+    """
+    Pre-process Canvas HTML before html_to_markdown conversion on import.
+
+    Strips template wrapper sections (header/footer applied at publish time)
+    and restores {{include:name}} and {{var:name}} call syntax from the
+    HTML comment markers added during variable/include resolution.
+
+    Processing order matters: includes first so any nested var markers
+    inside include blocks are removed in one shot with the include block.
+    """
+    html = _TEMPLATE_MARKER_RE.sub("", html)
+    html = _INCLUDE_MARKER_RE.sub(r"{{include:\1}}", html)
+    html = _VAR_MARKER_RE.sub(r"{{var:\1}}", html)
+    return html
 
 
 # =============================================================================

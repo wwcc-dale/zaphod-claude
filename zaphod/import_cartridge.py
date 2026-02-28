@@ -59,6 +59,7 @@ import frontmatter
 from zaphod.security_utils import is_safe_path
 from zaphod.icons import SUCCESS, WARNING, ERROR
 from zaphod.html_to_markdown import convert_canvas_html_to_markdown
+from zaphod.frontmatter_to_meta import restore_zaphod_markers
 
 
 # ============================================================================
@@ -1235,6 +1236,10 @@ def html_to_markdown(html_content: str) -> str:
 
     # Clean up HTML
     html_content = html_content.strip()
+
+    # Restore {{var:name}} / {{include:name}} references and strip template
+    # sections from Zaphod round-trip markers before converting to markdown
+    html_content = restore_zaphod_markers(html_content)
 
     # Preprocess: Convert code blocks with language hints to data attributes
     # This helps preserve language identifiers through the conversion
