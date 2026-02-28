@@ -182,6 +182,101 @@ can accept the file via a native file picker and POST the content directly.
 
 ---
 
+## Template Variables & Includes
+
+### What zaphod supports
+
+`header.md` and `footer.md` inside `templates/{name}/` now support full
+variable and include interpolation — the same syntax as `index.md` body content:
+
+```markdown
+<!-- header.md -->
+{{include:progress_dashboard}}
+
+Welcome to {{var:course_title}}
+```
+
+### Variable resolution order (3-tier, lowest → highest)
+
+| Tier | Source | Notes |
+|------|--------|-------|
+| 1 | `_all_courses/shared/variables.yaml` | Program-level defaults |
+| 2 | `<course>/shared/variables.yaml` | Course-level overrides |
+| 3 | `index.md` frontmatter | Per-item overrides |
+
+All three tiers are merged and available in both `source.md` content and templates.
+Page frontmatter is the highest priority — intentionally, so per-page context
+(e.g. session number, progress position) can flow into template widgets.
+
+### Include resolution order
+
+For `{{include:name}}`:
+
+1. `<course>/shared/name.md` — course-specific
+2. `_all_courses/shared/name.md` — program-level fallback
+3. `<course>/content/includes/name.md` — legacy
+4. `<course>/includes/name.md` — legacy
+5. `_all_courses/includes/name.md` — legacy
+
+### `_all_courses/` location
+
+`_all_courses/` is found by **walking up from `cwd`** (the course directory) until
+a `_all_courses/` directory is encountered. It does not need to be at a fixed
+location relative to zaphod's install path. Typical structure:
+
+```
+courselab/
+  _all_courses/
+    shared/
+      variables.yaml    ← program-wide variable defaults
+      progress_dashboard.md  ← shared include files
+  courses/
+    07-javascript-cards/   ← cwd when running zaphod
+    08-python-intro/
+```
+
+### Round-trip HTML comment markers
+
+When zaphod publishes content to Canvas, it wraps resolved variables, includes,
+and template sections in HTML comment markers so they can be faithfully restored
+on import.
+
+**Format:**
+
+| Marker | Meaning |
+|--------|---------|
+| `<!-- {{var:name}} -->value<!-- {{/var:name}} -->` | Resolved variable — restore as `{{var:name}}` on import |
+| `<!-- {{include:name}} -->...<!-- {{/include:name}} -->` | Rendered include block — restore as `{{include:name}}` on import |
+| `<!-- {{template:header}} -->...<!-- {{/template:header}} -->` | Rendered template header — **strip entirely** on import |
+| `<!-- {{template:footer}} -->...<!-- {{/template:footer}} -->` | Rendered template footer — **strip entirely** on import |
+
+**What zaphod-app needs to do for preview rendering:**
+
+If the app renders Canvas HTML for local preview, it should apply `restore_zaphod_markers()`
+(exported from `zaphod.frontmatter_to_meta`) before displaying — or replicate its logic:
+
+1. Strip `<!-- {{template:*}} -->...<!-- {{/template:*}} -->` blocks
+2. Replace `<!-- {{include:name}} -->...<!-- {{/include:name}} -->` → `{{include:name}}`
+3. Replace `<!-- {{var:name}} -->...<!-- {{/var:name}} -->` → `{{var:name}}`
+
+**Caveat:** HTML comment markers survive Canvas API round-trips but are stripped if a
+user manually edits the page in Canvas's rich content editor (RCE). The import pipeline
+falls back to converting raw HTML to markdown in that case.
+
+### Frontmatter keys used for template context
+
+These per-item frontmatter keys are commonly used in template widgets (e.g. a progress
+dashboard) and flow into template rendering at publish time:
+
+| Key | Purpose |
+|-----|---------|
+| `position` | Item position within its module (1-based) |
+| `session` | Session/module number (set manually or via import) |
+| `session_total` | Total number of sessions in the course |
+| Any other key | Available as `{{var:key}}` in templates |
+
+---
+
 ## Sync ↔ Export Parity Rule
 
 **When a frontmatter field or content feature is added or changed in one pipeline, it must be reflected in the other.**
