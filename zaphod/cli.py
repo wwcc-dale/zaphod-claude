@@ -1214,6 +1214,36 @@ def suggest_includes(ctx: ZaphodContext, course_dir: Optional[Path]):
 
 
 # ============================================================================
+# Reorder
+# ============================================================================
+
+@cli.command("reorder")
+@click.option("--dry-run", is_flag=True, help="Show changes without writing")
+@click.option("--verbose", "-v", is_flag=True, help="Print each item stamped")
+@click.pass_obj
+def reorder(ctx: ZaphodContext, dry_run: bool, verbose: bool):
+    """
+    Stamp position and session into index.md frontmatter from folder names.
+
+    Reads each content item's folder name and derives:
+      - position:  1-based rank within its module (same sort as sync)
+      - session:   numeric value from the s{nn} folder prefix (if present)
+
+    Run this after 'zaphod import' to lock in ordering as explicit frontmatter
+    values. Idempotent — re-running produces the same result.
+
+    Examples:
+        zaphod reorder --dry-run --verbose   # Preview changes
+        zaphod reorder                        # Apply changes
+        zaphod reorder --verbose              # Apply with per-item output
+    """
+    from zaphod.codify_order import codify_order
+    result = codify_order(dry_run=dry_run, verbose=verbose)
+    tag = "[dry-run] " if dry_run else ""
+    print(f"\n{tag}Done: {result['updated']} updated, {result['skipped']} unchanged, {result['errors']} errors")
+
+
+# ============================================================================
 # UI Server
 # ============================================================================
 

@@ -67,6 +67,9 @@ The following are treated as a **stable contract**. Changes here require a match
 | `name`    | `index.md`      | Content item display name        |
 | `title`   | `module.yaml`   | Module display name              |
 | `position`| `index.md`      | Item sort order                  |
+| `session` | `index.md`      | Session number (template variable) |
+
+`position:` and `session:` can be auto-stamped from folder names after import — see `zaphod reorder` below.
 
 `title:` in `index.md` is accepted as a legacy alias for `name:` by both zaphod-dev
 (`frontmatter_to_meta.py`) and zaphod-app. New content should always use `name:`.
@@ -179,6 +182,33 @@ POST /api/scrape/outcomes   body: {html_path: str}  → runs scrape outcomes, re
 Both endpoints accept either an absolute path to a saved HTML file or (better for UX) a
 base64-encoded HTML blob so the user doesn't need the file saved to a known path — the app
 can accept the file via a native file picker and POST the content directly.
+
+---
+
+## `zaphod reorder` — Stamp position/session from folder names
+
+After `zaphod import`, content items are placed in `.module` folders with the naming
+convention `{nn:02d}-s{mm:02d}-{name}.{ext}`. The `nn` prefix encodes item position
+within the module; the `s{mm}` component encodes session number. `zaphod reorder`
+reads these folder names and stamps the derived values as explicit frontmatter:
+
+| Key | Source | Notes |
+|-----|--------|-------|
+| `position:` | Rank within module after sorting by folder prefix | Always written when it differs |
+| `session:` | `s{nn}` component in folder name | Only written when an `s{nn}` token is detected |
+
+Sort order used: `position:` frontmatter (if already set) → numeric folder prefix → alphabetical.
+This mirrors `export_modules.py` and `sync_modules.py`, so the stamped values are stable.
+
+Run once after import, then commit:
+
+```bash
+zaphod reorder --dry-run --verbose   # preview
+zaphod reorder                        # apply
+```
+
+**What zaphod-app needs:** expose a "Reorder" action (or run it automatically post-import)
+that calls `zaphod reorder`. The command is idempotent — safe to re-run.
 
 ---
 
