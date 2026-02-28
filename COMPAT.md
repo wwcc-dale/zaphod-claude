@@ -62,14 +62,16 @@ The following are treated as a **stable contract**. Changes here require a match
 
 ### Frontmatter keys read by the app
 
-| Key       | Location        | Purpose                          |
-|-----------|-----------------|----------------------------------|
-| `name`    | `index.md`      | Content item display name        |
-| `title`   | `module.yaml`   | Module display name              |
-| `position`| `index.md`      | Item sort order                  |
-| `session` | `index.md`      | Session number (template variable) |
+| Key        | Location        | Purpose                                        |
+|------------|-----------------|------------------------------------------------|
+| `name`     | `index.md`      | Content item display name                      |
+| `title`    | `module.yaml`   | Module display name                            |
+| `position` | `index.md`      | Item sort order within its module              |
+| `session`  | `index.md`      | Session number (int, template variable)        |
+| `module`   | `index.md`      | Module number (int, from `.module` folder prefix, template variable) |
+| `modules`  | `index.md`      | Explicit module membership list (legacy — not needed when item is inside a `.module` folder) |
 
-`position:` and `session:` can be auto-stamped from folder names after import — see `zaphod reorder` below.
+`position:`, `session:`, and `module:` can be auto-stamped from folder names after import — see `zaphod reorder` below.
 
 `title:` in `index.md` is accepted as a legacy alias for `name:` by both zaphod-dev
 (`frontmatter_to_meta.py`) and zaphod-app. New content should always use `name:`.
@@ -185,30 +187,48 @@ can accept the file via a native file picker and POST the content directly.
 
 ---
 
-## `zaphod reorder` — Stamp position/session from folder names
+## `zaphod reorder` — Stamp derived values from folder structure
 
 After `zaphod import`, content items are placed in `.module` folders with the naming
-convention `{nn:02d}-s{mm:02d}-{name}.{ext}`. The `nn` prefix encodes item position
-within the module; the `s{mm}` component encodes session number. `zaphod reorder`
-reads these folder names and stamps the derived values as explicit frontmatter:
+convention `{nn:02d}-s{mm:02d}-{name}.{ext}`. `zaphod reorder` reads these folder
+names and the course root name, then stamps the derived values as explicit frontmatter
+and shared variables:
 
-| Key | Source | Notes |
-|-----|--------|-------|
-| `position:` | Rank within module after sorting by folder prefix | Always written when it differs |
-| `session:` | `s{nn}` component in folder name | Only written when an `s{nn}` token is detected |
+### Frontmatter keys stamped into each `index.md`
+
+| Key | Type | Source | Notes |
+|-----|------|--------|-------|
+| `position:` | int | 1-based rank within module after sorting | Always written when it differs |
+| `session:` | int | `s{nn}` component in item folder name | Only written when token detected |
+| `module:` | int | Numeric prefix of the nearest `.module` ancestor dir | Only written when prefix present |
 
 Sort order used: `position:` frontmatter (if already set) → numeric folder prefix → alphabetical.
 This mirrors `export_modules.py` and `sync_modules.py`, so the stamped values are stable.
 
-Run once after import, then commit:
+`module:` is a template variable (use as `{{var:module}}`). It is **not** the same as
+`modules:` (list) — the legacy key for explicit Canvas module membership. `modules:` is
+left untouched; module membership continues to be inferred from directory structure at
+build time via `infer_module_from_path()`.
+
+### Shared variable stamped into `shared/variables.yaml`
+
+| Key | Type | Source | Notes |
+|-----|------|--------|-------|
+| `course_order:` | int | Numeric prefix of course root directory name | e.g. `07-javascript-cards` → `7` |
+
+Merges into existing `shared/variables.yaml`; creates the file and `shared/` dir if absent.
+
+### Usage
 
 ```bash
 zaphod reorder --dry-run --verbose   # preview
 zaphod reorder                        # apply
 ```
 
+Idempotent — safe to re-run. Run once after `zaphod import`, then commit the changes.
+
 **What zaphod-app needs:** expose a "Reorder" action (or run it automatically post-import)
-that calls `zaphod reorder`. The command is idempotent — safe to re-run.
+that calls `zaphod reorder`.
 
 ---
 
