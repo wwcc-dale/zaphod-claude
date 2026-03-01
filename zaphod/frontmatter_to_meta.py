@@ -155,8 +155,10 @@ def infer_module_from_path(folder: Path) -> str | None:
     return None
 
 
-# {{var:key}} interpolation
-VAR_RE = re.compile(r"\{\{var:([a-zA-Z_][a-zA-Z0-9_-]*)\}\}")
+# {{var:key}} and {{var:key | filter...}} interpolation
+# Group 1: variable name
+# Group 2: optional filter chain (e.g. " | upcase | default:x"), empty string if none
+VAR_RE = re.compile(r"\{\{var:([a-zA-Z_][a-zA-Z0-9_-]*)([^}]*)\}\}")
 
 
 # {{include:name}} interpolation
@@ -270,17 +272,31 @@ def resolve_include_path(folder: Path, name: str) -> Path | None:
 
 def interpolate_body(body: str, metadata: dict) -> str:
     """
-    Replace {{var:key}} in the body with corresponding values from metadata.
-    Resolved values are wrapped in HTML comment markers so the import pipeline
-    can restore the original {{var:key}} reference on round-trip.
-    If a key is missing, leave the placeholder as-is.
+    Replace {{var:key}} and {{var:key | filter...}} in the body with values from metadata.
+
+    Filters are applied left-to-right. Supported filters: default, required,
+    upcase, downcase, titlecase, replace, ordinal, decimals. See var_filters.py.
+
+    Resolved values are wrapped in HTML comment markers (including any filter chain)
+    so the import pipeline can restore the original expression on round-trip.
+    If a key is missing and no default filter provides a value, the placeholder
+    is left as-is.
     """
+    from zaphod.var_filters import parse_filter_chain, apply_filters
+
     def replace(match):
-        key = match.group(1)
-        if key not in metadata:
-            return match.group(0)
-        value = str(metadata[key])
-        return f"<!-- {{{{var:{key}}}}} -->{value}<!-- {{{{/var:{key}}}}} -->"
+        var_name = match.group(1)
+        filter_raw = match.group(2)        # e.g. " | upcase" or "" if none
+        full_expr = var_name + filter_raw  # used in markers and warning messages
+
+        filters = parse_filter_chain(filter_raw)
+        raw_value = str(metadata[var_name]) if var_name in metadata else None
+        result = apply_filters(raw_value, filters, var_name, full_expr)
+
+        if result is None:
+            return match.group(0)  # leave placeholder unchanged
+
+        return f"<!-- {{{{var:{full_expr}}}}} -->{result}<!-- {{{{/var:{full_expr}}}}} -->"
 
     return VAR_RE.sub(replace, body)
 
