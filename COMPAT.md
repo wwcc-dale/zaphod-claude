@@ -232,6 +232,51 @@ that calls `zaphod reorder`.
 
 ---
 
+## Variable Filters
+
+Variable expressions now support an optional filter chain applied left-to-right:
+
+```
+{{var:variable_name | filter1 | filter2:arg}}
+```
+
+### Supported filters
+
+| Filter | Arg | Behaviour |
+|--------|-----|-----------|
+| `default:value` | fallback string | Use value when variable is missing or empty |
+| `required` | — | Emit build-time warning if variable is not set |
+| `upcase` | — | UPPERCASE |
+| `downcase` | — | lowercase |
+| `titlecase` | — | Title Case |
+| `replace:old,new` | two values, comma-separated | Substring replacement; quote values containing spaces |
+| `ordinal` | — | Integer → ordinal string: `7` → `"7th"` |
+| `decimals:n` | integer | Float formatted to n decimal places |
+
+Full reference: `docs/user-guide/variable-filters.md`
+
+### Round-trip markers include the filter chain
+
+The filter chain is preserved in HTML comment markers:
+```html
+<!-- {{var:session | ordinal}} -->7th<!-- {{/var:session | ordinal}} -->
+```
+`restore_zaphod_markers()` restores the full expression including filters — no changes
+needed in the import pipeline. The existing `_VAR_MARKER_RE` pattern (`[^}]+`) already
+matches filter chains.
+
+### What zaphod-app needs to handle
+
+- **Template authoring UI** — if the app provides a variable picker or expression editor,
+  it must allow the `| filter` suffix in the expression field. Expressions are plain text;
+  no special UI handling is required beyond not stripping the `|` syntax.
+- **No other changes** — filters are resolved transparently by `frontmatter_to_meta.py`
+  at publish time. The app's sync pipeline (`zaphod sync`) picks this up automatically.
+- **Import** — `restore_zaphod_markers()` requires no changes; it already round-trips
+  filter chains correctly.
+
+---
+
 ## Template Variables & Includes
 
 ### What zaphod supports
