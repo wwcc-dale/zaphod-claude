@@ -199,7 +199,7 @@ and shared variables:
 | Key | Type | Source | Notes |
 |-----|------|--------|-------|
 | `position:` | int | 1-based rank within module after sorting | Always written when it differs |
-| `session:` | int | `s{nn}` component in item folder name | Only written when token detected |
+| `session:` | int or float | `s{nn}` component in item folder name | Decimal (e.g. `3.1`, `3.2`) when multiple items in the same module share the same session number; integer otherwise |
 | `module:` | int | Numeric prefix of the nearest `.module` ancestor dir | Only written when prefix present |
 
 Sort order used: `position:` frontmatter (if already set) → numeric folder prefix → alphabetical.
@@ -209,6 +209,11 @@ This mirrors `export_modules.py` and `sync_modules.py`, so the stamped values ar
 `modules:` (list) — the legacy key for explicit Canvas module membership. `modules:` is
 left untouched; module membership continues to be inferred from directory structure at
 build time via `infer_module_from_path()`.
+
+When multiple content items within the same module share the same session number,
+`session:` is assigned a decimal value (`3.1`, `3.2`, …) to distinguish them. This lets
+templates order or display items within a session without breaking the integer baseline
+(e.g. `{{var:session | decimals:0}}` recovers the session integer).
 
 ### Shared variable stamped into `shared/variables.yaml`
 

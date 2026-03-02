@@ -185,7 +185,7 @@ def _apply(
     folder: Path,
     post: frontmatter.Post,
     position: int,
-    session: Optional[int],
+    session: Optional[int | float],
     module_number: Optional[int],
     dry_run: bool,
     verbose: bool,
@@ -241,7 +241,8 @@ def codify_order(dry_run: bool = False, verbose: bool = False) -> dict:
 
       index.md frontmatter:
         position:  1-based rank within the item's module
-        session:   from the s{nn} folder prefix (if present)
+        session:   from the s{nn} folder prefix (if present); decimal (e.g. 3.1, 3.2)
+                   when multiple items in the same module share the same session number
         module:    integer from the numeric prefix of the nearest .module ancestor dir
 
       shared/variables.yaml:
@@ -292,10 +293,22 @@ def codify_order(dry_run: bool = False, verbose: bool = False) -> dict:
         label = f"\n[module: {module_name}]" if module_name else "\n[no module]"
         if verbose:
             print(label)
+
+        # Pre-count session occurrences to detect collisions within this group
+        session_counts: dict[Optional[int], int] = defaultdict(int)
+        for folder, _ in group:
+            session_counts[extract_session(folder.name)] += 1
+        session_index: dict[Optional[int], int] = defaultdict(int)
+
         for position, (folder, post) in enumerate(group, start=1):
-            session = extract_session(folder.name)
+            raw_session = extract_session(folder.name)
             module_number = extract_module_number(folder)
-            _apply(folder, post, position, session, module_number, dry_run, verbose, counts)
+            if raw_session is not None and session_counts[raw_session] > 1:
+                session_index[raw_session] += 1
+                session_value: Optional[int | float] = round(raw_session + session_index[raw_session] * 0.1, 1)
+            else:
+                session_value = raw_session
+            _apply(folder, post, position, session_value, module_number, dry_run, verbose, counts)
 
     return counts
 
