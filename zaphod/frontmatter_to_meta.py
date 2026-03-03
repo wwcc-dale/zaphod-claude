@@ -164,6 +164,11 @@ VAR_RE = re.compile(r"\{\{var:([a-zA-Z_][a-zA-Z0-9_-]*)([^}]*)\}\}")
 # {{include:name}} interpolation
 INCLUDE_RE = re.compile(r"\{\{include:([a-zA-Z_][a-zA-Z0-9_-]*)\}\}")
 
+# Matches a complete double-quoted HTML attribute value (may span multiple lines).
+# Used by interpolate_body to resolve vars inside attributes without emitting
+# HTML comment markers (which are invalid inside attribute values).
+_ATTR_VALUE_RE = re.compile(r'(=")(.*?)(")', re.DOTALL)
+
 
 # =============================================================================
 # Variables Loading
@@ -277,28 +282,42 @@ def interpolate_body(body: str, metadata: dict) -> str:
     Filters are applied left-to-right. Supported filters: default, required,
     upcase, downcase, titlecase, replace, ordinal, decimals. See var_filters.py.
 
-    Resolved values are wrapped in HTML comment markers (including any filter chain)
-    so the import pipeline can restore the original expression on round-trip.
+    Two-pass approach:
+    - Pass 1: vars inside HTML attribute values (="...") → raw value, no markers.
+      HTML comment markers are invalid inside attribute values and are mangled by
+      Canvas's HTML sanitizer.
+    - Pass 2: vars in text content → wrapped in round-trip HTML comment markers so
+      the import pipeline can restore the original expression.
+
     If a key is missing and no default filter provides a value, the placeholder
     is left as-is.
     """
     from zaphod.var_filters import parse_filter_chain, apply_filters
 
-    def replace(match):
-        var_name = match.group(1)
-        filter_raw = match.group(2)        # e.g. " | upcase" or "" if none
-        full_expr = var_name + filter_raw  # used in markers and warning messages
-
+    def _resolve(var_name, filter_raw):
+        full_expr = var_name + filter_raw
         filters = parse_filter_chain(filter_raw)
         raw_value = str(metadata[var_name]) if var_name in metadata else None
         result = apply_filters(raw_value, filters, var_name, full_expr)
+        return result, full_expr
 
+    # Pass 1: attribute values — replace vars with raw value only
+    def replace_in_attr(attr_match):
+        def replace_var(m):
+            result, _ = _resolve(m.group(1), m.group(2))
+            return result if result is not None else m.group(0)
+        return attr_match.group(1) + VAR_RE.sub(replace_var, attr_match.group(2)) + attr_match.group(3)
+
+    body = _ATTR_VALUE_RE.sub(replace_in_attr, body)
+
+    # Pass 2: text content — replace vars with round-trip comment markers
+    def replace_in_text(m):
+        result, full_expr = _resolve(m.group(1), m.group(2))
         if result is None:
-            return match.group(0)  # leave placeholder unchanged
-
+            return m.group(0)
         return f"<!-- {{{{var:{full_expr}}}}} -->{result}<!-- {{{{/var:{full_expr}}}}} -->"
 
-    return VAR_RE.sub(replace, body)
+    return VAR_RE.sub(replace_in_text, body)
 
 
 def interpolate_includes(body: str, folder: Path, metadata: dict) -> str:
@@ -314,8 +333,7 @@ def interpolate_includes(body: str, folder: Path, metadata: dict) -> str:
             print(f"⚠️ {folder.name}: include '{name}' not found")
             return match.group(0)
         try:
-            inc_content = inc_path.read_text(encoding="utf-8")
-            inc_content = interpolate_body(inc_content, metadata)
+            inc_content = inc_path.read_text(encoding="utf-8").strip()
             inc_content = interpolate_includes(inc_content, folder, metadata)
             return f"<!-- {{{{include:{name}}}}} -->\n{inc_content}\n<!-- {{{{/include:{name}}}}} -->"
         except Exception as e:
