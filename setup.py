@@ -14,7 +14,7 @@ setup(
     version="1.0.0",
     description="Local-first Canvas LMS course management",
     packages=["zaphod"],
-    package_dir={"zaphod": "."},
+    package_dir={"zaphod": "zaphod"},
     install_requires=[
         "canvasapi>=3.0.0",
         "click>=8.0.0",
@@ -23,6 +23,9 @@ setup(
         "Markdown>=3.4.0",
         "watchdog>=3.0.0",
         "defusedxml>=0.7.1",
+        "html2text>=2020.1.16",
+        "beautifulsoup4>=4.9.0",
+        "requests>=2.28.0",
     ],
     extras_require={
         "dev": [
@@ -30,6 +33,9 @@ setup(
             "pytest-cov>=4.1.0",
             "pytest-mock>=3.11.1",
             "pytest-timeout>=2.1.0",
+        ],
+        "media": [
+            "ffmpeg-python>=0.2.0",
         ],
     },
     entry_points={

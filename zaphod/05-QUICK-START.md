@@ -38,23 +38,18 @@ python3 --version
 ```bash
 # Clone or download Zaphod
 cd ~/projects
-git clone https://github.com/yourusername/zaphod.git
-cd zaphod
+git clone https://github.com/yourusername/zaphod-dev.git
+cd zaphod-dev
 
-# Create virtual environment
+# Create virtual environment (at the repo root)
 python3 -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
-# Install dependencies
+# Install dependencies and the CLI
 pip install -r requirements.txt
-```
-
-### Install the CLI (optional but recommended)
-```bash
-# From the zaphod directory
 pip install -e .
 
-# Now you can use "zaphod" command anywhere
+# Now you can use "zaphod" command anywhere (while venv is active)
 zaphod --help
 ```
 
@@ -309,7 +304,7 @@ zaphod --help
 ### "Command not found: zaphod"
 **Fix:** Activate virtual environment:
 ```bash
-cd ~/projects/zaphod
+cd ~/projects/zaphod-dev
 source .venv/bin/activate
 ```
 

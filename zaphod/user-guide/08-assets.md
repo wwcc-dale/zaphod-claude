@@ -129,7 +129,7 @@ video_quality: medium
 - Cache is keyed by content hash + preset — re-transcoding is skipped if neither changes
 - Output is H.264/AAC in an MP4 container (Canvas-compatible)
 - Your original files are never modified
-- Requires [ffmpeg](https://ffmpeg.org) installed and `pip install ffmpeg-python`
+- Requires [ffmpeg](https://ffmpeg.org) installed and the `ffmpeg-python` package (optional dependency)
 
 **Install ffmpeg:**
 ```bash
@@ -139,7 +139,9 @@ brew install ffmpeg
 # Ubuntu/Debian
 sudo apt install ffmpeg
 
-pip install ffmpeg-python
+# Install the Python binding (optional extra)
+pip install -e ".[media]"
+# or: pip install ffmpeg-python
 ```
 
 **Omitting `video_quality`** (or setting it to `original`) skips transcoding entirely — the original file is uploaded as-is.

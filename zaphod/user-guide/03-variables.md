@@ -229,7 +229,7 @@ If a variable isn't being replaced:
 1. Check the spelling matches exactly (case-sensitive)
 2. Check it's defined in shared/variables.yaml or page frontmatter
 3. Run `zaphod sync` and look for warnings
-4. Make sure PyYAML is installed (`pip install pyyaml`)
+4. Make sure dependencies are installed (`pip install -r requirements.txt`)
 
 Variables that aren't found remain as `{{var:name}}` in the output, making them easy to spot.
 

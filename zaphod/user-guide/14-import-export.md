@@ -585,10 +585,9 @@ chmod u+w ./output-dir
 **Problem:** HTML not converting to markdown
 
 ```bash
-# Solution: Ensure html2text is installed
-pip install html2text
+# Solution: Ensure you installed all dependencies
+pip install -r requirements.txt
 
-# This is required for import functionality
 # Check if installed:
 python -c "import html2text; print('html2text installed')"
 ```
