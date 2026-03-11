@@ -172,28 +172,39 @@ Late submissions lose {{var:late_penalty}}.
 
 ### 3. Templates (Automatic Headers/Footers)
 
-**Location:** `canvas_publish.py` (lines 53-187)
+**Location:** `canvas_publish.py` — `load_template_files()`, `_read_template_dir()`, `_sanitize_template_name()`, `apply_templates()`
 
 **Status:** ✅ **FULLY IMPLEMENTED**
 
+**Lookup order (directory-level fallback):**
+1. `<course>/templates/<name>/` — course-local (highest priority)
+2. `<_all_courses>/templates/<name>/` — program-wide fallback (if course-local dir is empty)
+
+Fallback is **directory-level only** — header/footer pairs are never mixed across levels to avoid mismatched open/close wrapper tags (e.g. `header.html` that opens a `<div>` must be closed by its matching `footer.html`).
+
 **Structure:**
 ```
-course/
+_all_courses/               # program-level (shared across all courses)
 └── templates/
-    ├── default/            # Default template set
-    │   ├── header.html
-    │   ├── header.md
-    │   ├── footer.md
-    │   └── footer.html
+    └── default/
+        ├── header.html
+        ├── header.md
+        ├── footer.md
+        └── footer.html
+
+course/                     # course-local (overrides _all_courses entirely)
+└── templates/
+    ├── default/
+    │   └── ...
     └── fancy/              # Alternative template set
         └── ...
 ```
 
 **Application Order:**
 1. header.html (raw HTML)
-2. header.md → converted to HTML
+2. header.md → converted to HTML (supports `{{var:...}}` and `{{include:...}}`)
 3. [Your page content]
-4. footer.md → converted to HTML
+4. footer.md → converted to HTML (supports `{{var:...}}` and `{{include:...}}`)
 5. footer.html (raw HTML)
 
 **Frontmatter Control:**
@@ -205,7 +216,7 @@ template: null         # Skip templates entirely
 ---
 ```
 
-**Security:** Template names validated, path traversal prevented
+**Security:** Template names validated (alphanumeric/hyphen/underscore only), path traversal prevented in both course-local and `_all_courses` lookups.
 
 **Integration:** Used by `ZaphodPage.to_canvas_html()` and `ZaphodAssignment.to_canvas_html()`
 
@@ -522,12 +533,15 @@ ZAPHOD_EXPORT_ON_SYNC=1             # Auto-export after sync
 ### ✅ Template System - FULLY IMPLEMENTED
 **Documentation:** Extensive user guide (`13-templates.md`)
 
-**Reality:** ✅ **Completely implemented** in `canvas_publish.py` (lines 53-187)
-- `load_template_files()` - loads from `templates/{name}/` directory
-- `apply_templates()` - applies header/footer wrapping
+**Reality:** ✅ **Completely implemented** in `canvas_publish.py`
+- `_sanitize_template_name()` — path traversal validation
+- `_read_template_dir()` — reads all four files from one directory
+- `load_template_files()` — directory-level fallback: course-local → `_all_courses`
+- `apply_templates()` — applies header/footer wrapping
 - Supports: header.html, header.md, footer.md, footer.html
 - `template:` frontmatter field works
-- Security validated (path traversal prevented)
+- `_all_courses/templates/<name>/` is program-wide fallback (2026-03-10)
+- Security validated (path traversal prevented at both lookup levels)
 - Used by ZaphodPage and ZaphodAssignment classes
 
 **Status:** Production-ready, well-documented, secure.

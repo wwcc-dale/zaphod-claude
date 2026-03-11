@@ -282,6 +282,60 @@ matches filter chains.
 
 ---
 
+## `_all_courses/templates/` — Program-Wide Template Fallback
+
+Templates now support a program-wide fallback directory so all courses can share
+a standard header/footer without duplicating files:
+
+### Lookup order (directory-level)
+
+1. `<course>/templates/<name>/` — course-local (highest priority)
+2. `<_all_courses>/templates/<name>/` — program-wide fallback (if step 1 is empty)
+
+**Directory-level only** — individual files are never mixed across levels. header/footer
+pairs (especially HTML) are often structurally coupled (open/close wrappers), so mixing
+them across levels would produce malformed HTML.
+
+### Structure
+
+```
+_all_courses/
+└── templates/
+    └── default/            # shared across all courses
+        ├── header.html
+        ├── header.md
+        ├── footer.md
+        └── footer.html
+
+course/                     # overrides _all_courses entirely if present
+└── templates/
+    └── default/
+        └── ...
+```
+
+### Variable resolution in shared templates
+
+Variable and include expansion in shared template files uses the full 3-tier variable
+scope (program → course → page), identical to course-local templates. Page frontmatter
+flows in as the highest priority tier.
+
+### Where this is implemented
+
+| Codebase | File | Function |
+|----------|------|----------|
+| zaphod-dev | `canvas_publish.py` | `load_template_files()` |
+| zaphod-app | `src-python/api/course.py` | `_apply_template()` |
+
+### What zaphod-app needs to handle
+
+- **Preview pane** — `_apply_template()` already updated (2026-03-10) to apply the same
+  directory-level fallback, so preview matches publish output.
+- **Shared files UI** — `list_shared()` currently only scans `<course>/shared/` and
+  `<course>/templates/`. `_all_courses/templates/` files are not yet shown in the UI
+  (they are read-only from the course's perspective anyway).
+
+---
+
 ## Template Variables & Includes
 
 ### What zaphod supports

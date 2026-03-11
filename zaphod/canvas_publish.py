@@ -30,6 +30,7 @@ from zaphod.frontmatter_to_meta import (
     load_shared_variables,
     interpolate_body,
     interpolate_includes,
+    find_all_courses_dir,
 )
 
 
@@ -55,9 +56,55 @@ def get_course_root(content_folder: Path) -> Path:
     return Path.cwd()
 
 
+def _read_template_dir(templates_base: Path, templates_dir: Path) -> Dict[str, str]:
+    """
+    Read all four template files from a directory.
+
+    Returns dict with keys header_html, header_md, footer_md, footer_html.
+    Values are file contents or empty string if file doesn't exist or is unsafe.
+    header/footer pairs are treated as matched sets: if either html file is
+    present both are loaded from the same directory (no cross-level mixing).
+    """
+    template_files = {
+        "header_html": templates_dir / "header.html",
+        "header_md": templates_dir / "header.md",
+        "footer_md": templates_dir / "footer.md",
+        "footer_html": templates_dir / "footer.html",
+    }
+    loaded = {}
+    for key, path in template_files.items():
+        if not is_safe_path(templates_base, path):
+            loaded[key] = ""
+            continue
+        if path.exists():
+            try:
+                loaded[key] = path.read_text(encoding="utf-8")
+            except Exception:
+                loaded[key] = ""
+        else:
+            loaded[key] = ""
+    return loaded
+
+
+def _sanitize_template_name(template_name: str) -> str:
+    """Return a safe template name, falling back to 'default' if invalid."""
+    if not template_name or not isinstance(template_name, str):
+        return "default"
+    # Only allow alphanumeric, hyphens, underscores
+    if not all(c.isalnum() or c in ('-', '_') for c in template_name):
+        return "default"
+    return template_name
+
+
 def load_template_files(course_root: Path, template_name: str = "default") -> Dict[str, str]:
     """
     Load template files for a given template set.
+
+    Lookup order (directory-level fallback — header/footer pairs are never
+    mixed across levels to avoid mismatched open/close wrapper tags):
+
+      1. <course_root>/templates/<template_name>/
+      2. <_all_courses>/templates/<template_name>/   (if step 1 is empty)
 
     Args:
         course_root: Course root directory
@@ -69,47 +116,26 @@ def load_template_files(course_root: Path, template_name: str = "default") -> Di
 
     Security:
         Validates template_name to prevent path traversal attacks.
-        Only reads files within course_root/templates/ directory.
+        Only reads files within a known templates/ directory.
     """
-    # SECURITY: Validate template name to prevent path traversal
-    # Reject names with path separators or parent directory references
-    if not template_name or not isinstance(template_name, str):
-        template_name = "default"
+    template_name = _sanitize_template_name(template_name)
 
-    # Sanitize: only allow alphanumeric, hyphens, underscores
-    if not all(c.isalnum() or c in ('-', '_') for c in template_name):
-        # Invalid characters - fall back to default
-        template_name = "default"
-
+    # --- Step 1: course-local templates ---
     templates_base = course_root / "templates"
     templates_dir = templates_base / template_name
-
-    # SECURITY: Verify resolved path is within templates directory
     if not is_safe_path(templates_base, templates_dir):
-        # Path traversal attempt detected - use default
         templates_dir = templates_base / "default"
 
-    template_files = {
-        "header_html": templates_dir / "header.html",
-        "header_md": templates_dir / "header.md",
-        "footer_md": templates_dir / "footer.md",
-        "footer_html": templates_dir / "footer.html",
-    }
+    loaded = _read_template_dir(templates_base, templates_dir)
 
-    loaded = {}
-    for key, path in template_files.items():
-        # SECURITY: Double-check each file is within templates directory
-        if not is_safe_path(templates_base, path):
-            loaded[key] = ""
-            continue
-
-        if path.exists():
-            try:
-                loaded[key] = path.read_text(encoding="utf-8")
-            except Exception:
-                loaded[key] = ""
-        else:
-            loaded[key] = ""
+    # --- Step 2: _all_courses fallback (directory-level only) ---
+    if not any(loaded.values()):
+        all_courses = find_all_courses_dir()
+        if all_courses:
+            ac_base = all_courses / "templates"
+            ac_dir = ac_base / template_name
+            if is_safe_path(ac_base, ac_dir):
+                loaded = _read_template_dir(ac_base, ac_dir)
 
     return loaded
 
