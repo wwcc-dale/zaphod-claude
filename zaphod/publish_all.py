@@ -317,6 +317,13 @@ HTML_IMG_RE = re.compile(r'<img\s+[^>]*src=["\']([^"\']+)["\'][^>]*>', re.IGNORE
 # HTML anchor with href to local file: <a href="path" ...>
 HTML_LINK_RE = re.compile(r'<a\s+[^>]*href=["\']([^"\']+)["\'][^>]*>', re.IGNORECASE)
 
+# Trillian buttons component: - Label | href | style | icon | position
+# Matches list items with a pipe-separated href in the second field
+TRILLIAN_BTN_RE = re.compile(r'^(-\s+[^|\n]+\|)\s*(\S+?)(\s*\|.*)?$', re.MULTILINE)
+
+# Trillian banner component: - image: path | ... or - logo: path | ...
+TRILLIAN_BANNER_RE = re.compile(r'^(-\s+(?:image|logo):\s*)(\S+?)(\s*\|.*|\s*)$', re.MULTILINE)
+
 # File extensions we consider local assets (not URLs)
 LOCAL_ASSET_EXTENSIONS = {
     # Images
@@ -333,6 +340,8 @@ LOCAL_ASSET_EXTENSIONS = {
     '.mp3', '.wav', '.ogg', '.m4a', '.flac',
     # Other
     '.json', '.xml', '.yaml', '.yml', '.html', '.htm',
+    # Code files
+    '.js', '.ts', '.css', '.py', '.mjs', '.cjs',
 }
 
 
@@ -582,7 +591,33 @@ def replace_local_asset_references(text: str, course, folder: Path, cache: dict,
         return full_tag
     
     text = HTML_LINK_RE.sub(replace_html_link, text)
-    
+
+    # Process Trillian buttons: - Label | href | style | icon
+    def replace_trillian_btn(match):
+        prefix = match.group(1)
+        file_ref = match.group(2)
+        suffix = match.group(3) or ''
+
+        canvas_url = get_canvas_url(file_ref)
+        if canvas_url:
+            return f'{prefix} {canvas_url}{suffix}'
+        return match.group(0)
+
+    text = TRILLIAN_BTN_RE.sub(replace_trillian_btn, text)
+
+    # Process Trillian banner: - image: path | ... or - logo: path | ...
+    def replace_trillian_banner(match):
+        prefix = match.group(1)
+        file_ref = match.group(2)
+        suffix = match.group(3) or ''
+
+        canvas_url = get_canvas_url(file_ref)
+        if canvas_url:
+            return f'{prefix}{canvas_url}{suffix}'
+        return match.group(0)
+
+    text = TRILLIAN_BANNER_RE.sub(replace_trillian_banner, text)
+
     return text
 
 
@@ -611,7 +646,9 @@ def find_all_asset_files() -> list[Path]:
         # Audio
         '.mp3', '.wav', '.ogg', '.m4a', '.flac',
         # Other
-        '.json', '.xml', '.yaml', '.yml'
+        '.json', '.xml', '.yaml', '.yml',
+        # Code files
+        '.js', '.ts', '.css', '.py', '.mjs', '.cjs',
     }
 
     exclude_patterns = {
