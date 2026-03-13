@@ -32,6 +32,7 @@ from zaphod.errors import (
 )
 from zaphod.security_utils import is_safe_path
 from zaphod.icons import SUCCESS, ERROR, fence
+from zaphod.sync_modules import get_folder_sort_key
 
 
 # Paths relative to course root (cwd)
@@ -95,12 +96,33 @@ def get_changed_files() -> list[Path]:
 
 def iter_all_content_dirs():
     """
-    Yield every content folder under content/ (or pages/) ending in a known extension.
+    Yield every content folder under content/ (or pages/) ending in a known extension,
+    sorted by position so Canvas assigns sequential positions in the correct order to
+    the Assignments list and Pages list (independent of module ordering).
+
+    Sort priority (mirrors sync_modules.get_folder_sort_key):
+      1. position: frontmatter in meta.json (explicit)
+      2. Numeric folder prefix (01-foo.page → 1)
+      3. Alphabetical fallback
     """
     content_dir = get_content_dir()
+    folders = []
     for ext in [".page", ".assignment", ".link", ".file"]:
         for folder in content_dir.rglob(f"*{ext}"):
-            yield folder
+            folders.append(folder)
+
+    def _sort_key(folder: Path) -> tuple:
+        meta_path = folder / "meta.json"
+        meta = None
+        if meta_path.exists():
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        return get_folder_sort_key(folder, meta)
+
+    folders.sort(key=_sort_key)
+    yield from folders
 
 
 def iter_changed_content_dirs(changed_files: list[Path]):
