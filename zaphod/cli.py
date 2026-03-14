@@ -1283,6 +1283,59 @@ def ui(ctx: ZaphodContext, port: int, no_browser: bool):
 
 
 # ============================================================================
+# Calendar
+# ============================================================================
+
+@cli.group()
+def calendar():
+    """
+    Academic calendar processing
+
+    Converts a human-authored YAML/JSON calendar source into the
+    window.TRL_CALENDAR format consumed by Trillian components.
+    """
+    pass
+
+
+@calendar.command('process')
+@click.argument('source', type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option('--out', type=click.Path(), help='Write JS output to file (default: stdout)')
+@click.option('--json', 'json_out', type=click.Path(), help='Also write processed JSON to file')
+@click.option('--validate-only', is_flag=True, help='Count days and report without writing output')
+def calendar_process(source: Path, out: str, json_out: str, validate_only: bool):
+    """
+    Process a calendar source file into TRL_CALENDAR format
+
+    Reads a YAML or JSON academic calendar, counts instruction days per term
+    (weekdays minus holidays), validates the total, and emits a JS file
+    suitable for upload to Canvas Custom JS.
+
+    Examples:
+        zaphod calendar process calendar-2025-26.yaml
+        zaphod calendar process calendar-2025-26.yaml --out calendar-global.js
+        zaphod calendar process calendar-2025-26.yaml --out calendar-global.js --json calendar.json
+        zaphod calendar process calendar-2025-26.yaml --validate-only
+    """
+    from zaphod.calendar import process_calendar, emit_js, emit_json
+
+    data = process_calendar(source)
+
+    if validate_only:
+        return
+
+    js = emit_js(data)
+    if out:
+        Path(out).write_text(js, encoding="utf-8")
+        click.echo(f"Wrote  {out}")
+    else:
+        click.echo(js)
+
+    if json_out:
+        Path(json_out).write_text(emit_json(data), encoding="utf-8")
+        click.echo(f"Wrote  {json_out}")
+
+
+# ============================================================================
 # Version
 # ============================================================================
 
