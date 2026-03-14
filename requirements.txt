@@ -9,6 +9,7 @@ click>=8.0.0
 
 # Configuration
 PyYAML>=6.0
+pdfplumber>=0.10
 
 # Markdown processing
 python-frontmatter>=1.0.0

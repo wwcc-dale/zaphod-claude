@@ -11,18 +11,7 @@ import json
 from datetime import date, timedelta
 from pathlib import Path
 
-import yaml
-
-
-# =============================================================================
-# Core logic
-# =============================================================================
-
-def _parse_source(source_path: Path) -> dict:
-    raw = source_path.read_text(encoding="utf-8")
-    if source_path.suffix.lower() in (".yaml", ".yml"):
-        return yaml.safe_load(raw)
-    return json.loads(raw)
+from zaphod.calendar_readers import get_reader
 
 
 def _count_instruction_days(start: str, end: str, off: set) -> int:
@@ -45,7 +34,7 @@ def process_calendar(source_path: Path) -> dict:
     Also prints a summary report to stdout.
     Raises ValueError if totalInstructionDays is present and doesn't match.
     """
-    source = _parse_source(source_path)
+    source = get_reader(source_path).read(source_path)
 
     print(f"\nProcessing {source['year']} calendar for {source['school']}")
     print("─" * 50)
