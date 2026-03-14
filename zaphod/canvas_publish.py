@@ -23,7 +23,21 @@ from typing import Optional, Dict, Any, List
 from abc import ABC, abstractmethod
 
 import markdown
+from pygments.formatters import HtmlFormatter
 from canvasapi.course import Course
+
+class LangAwareFormatter(HtmlFormatter):
+    """Adds language-* class to <code> so it survives Canvas and is readable by Trillian."""
+    def _wrap_code(self, inner):
+        lang_str = self.options.get('lang_str', '')
+        attr = f' class="{lang_str}"' if lang_str else ''
+        yield 0, f'<code{attr}>'
+        yield from inner
+        yield 0, '</code>'
+
+CODEHILITE_CONFIG = {
+    'codehilite': {'pygments_formatter': LangAwareFormatter}
+}
 
 from zaphod.security_utils import is_safe_path
 from zaphod.frontmatter_to_meta import (
@@ -171,7 +185,8 @@ def apply_templates(source_markdown: str, course_root: Path, meta: Dict[str, Any
         # No templates - just convert markdown to HTML
         return markdown.markdown(
             source_markdown,
-            extensions=['extra', 'codehilite', 'toc', 'nl2br']
+            extensions=['extra', 'codehilite', 'toc', 'nl2br'],
+            extension_configs=CODEHILITE_CONFIG
         )
 
     # Default to "default" template set
@@ -185,7 +200,8 @@ def apply_templates(source_markdown: str, course_root: Path, meta: Dict[str, Any
     if not any(templates.values()):
         return markdown.markdown(
             source_markdown,
-            extensions=['extra', 'codehilite', 'toc', 'nl2br']
+            extensions=['extra', 'codehilite', 'toc', 'nl2br'],
+            extension_configs=CODEHILITE_CONFIG
         )
 
     # Build merged variable scope: program → course → page (same precedence as source.md)
@@ -217,7 +233,8 @@ def apply_templates(source_markdown: str, course_root: Path, meta: Dict[str, Any
     combined_markdown = "\n\n".join(markdown_parts)
     rendered_html = markdown.markdown(
         combined_markdown,
-        extensions=['tables', 'fenced_code', 'codehilite', 'toc', 'nl2br']
+        extensions=['tables', 'fenced_code', 'codehilite', 'toc', 'nl2br'],
+        extension_configs=CODEHILITE_CONFIG
     )
 
     # STEP 3: Wrap rendered HTML with header.html and footer.html
