@@ -193,12 +193,15 @@ This shows you exactly what Zaphod would create, update, or delete — but doesn
 
 This overview covered the basics. The rest of this guide goes deeper into each topic.
 
+> **New here?** Start with the [Authoring Quick Start](authoring-quick-start.md) — it covers all content types in one place with simple examples.
+
 ## The Basics
 
 Core skills any instructor needs:
 
 | Guide | What You'll Learn |
 |-------|-------------------|
+| [Authoring Quick Start](authoring-quick-start.md) | All content types in one place — start here |
 | [Pages](01-pages.md) | Creating and formatting pages |
 | [Assignments](02-assignments.md) | Assignments, due dates, and submission types |
 | [Modules](05-modules.md) | Organising your course structure |
