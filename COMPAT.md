@@ -258,7 +258,7 @@ Variable expressions now support an optional filter chain applied left-to-right:
 | `ordinal` | — | Integer → ordinal string: `7` → `"7th"` |
 | `decimals:n` | integer | Float formatted to n decimal places |
 
-Full reference: `docs/user-guide/variable-filters.md`
+Full reference: `docs/user-guide/03-variables.md` (Digging Deeper → Variable Filters)
 
 ### Round-trip markers include the filter chain
 

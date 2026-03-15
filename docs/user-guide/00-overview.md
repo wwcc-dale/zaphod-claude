@@ -216,7 +216,6 @@ Advanced features and full reference:
 | [Rubrics](06-rubrics.md) | Grading rubrics, shared criteria, outcome alignment |
 | [Outcomes](07-outcomes.md) | Course learning outcomes |
 | [Templates](13-templates.md) | Program-wide headers and footers |
-| [Variable Filters](variable-filters.md) | Transforming variable values |
 | [Calendar](17-calendar.md) | Academic calendar processing |
 | [Import & Export](14-import-export.md) | Course cartridge import/export |
 | [Asset Registry](15-asset-registry.md) | How asset deduplication works |

@@ -886,8 +886,7 @@ docs/
     ├── 15-asset-registry.md        # Asset Registry reference
     ├── 15-file-layout.md           # Course directory layout
     ├── 16-asset-workflow.md        # Asset workflow guide
-    ├── 17-calendar.md              # Calendar processing guide
-    └── variable-filters.md        # Variable filter reference
+    └── 17-calendar.md              # Calendar processing guide
 ```
 
 ---

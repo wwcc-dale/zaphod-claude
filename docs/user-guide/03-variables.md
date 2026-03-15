@@ -259,15 +259,116 @@ Each level overrides values from lower levels.
 
 ## Variable Filters
 
-Variables support an optional filter chain for transforming values at publish time:
+Variables support an optional filter chain that transforms the value at publish time. Filters are separated by `|` and applied left-to-right:
 
 ```
-{{var:session | ordinal}}           -> "7th"
-{{var:course_name | titlecase}}     -> "Introduction To Programming"
-{{var:missing | default:TBA}}       -> "TBA"
+{{var:variable_name | filter1 | filter2:arg}}
 ```
 
-See [Variable Filters](variable-filters.md) for the full filter reference.
+### `default:value`
+
+Use a fallback value when the variable is not defined at any tier.
+
+```
+{{var:bg_color | default:#ffffff}}
+{{var:instructor | default:TBA}}
+```
+
+Pairs well with `required` to surface misconfiguration while still providing a fallback:
+```
+{{var:course_code | required | default:UNKNOWN}}
+```
+
+### `required`
+
+Emit a build-time warning if the variable is not set. The placeholder is left in place rather than crashing the build.
+
+```
+{{var:course_name | required}}
+```
+
+Terminal output:
+```
+⚠️  {{var:course_name | required}}: required variable 'course_name' is not set
+```
+
+### `upcase` / `downcase` / `titlecase`
+
+```
+{{var:course_name | upcase}}       -> JAVASCRIPT CARDS
+{{var:course_name | downcase}}     -> javascript cards
+{{var:course_name | titlecase}}    -> Javascript Cards
+```
+
+### `replace:old,new`
+
+Replace a substring. Wrap values in quotes when they contain commas or spaces:
+
+```
+{{var:course_code | replace:_,' '}}     -> replaces _ with space
+{{var:course_code | replace:-,_}}       -> replaces - with _
+{{var:label | replace:',',' / '}}       -> replaces comma with ' / '
+```
+
+Omitting `new` deletes the matched string:
+```
+{{var:course_code | replace:COURSE-,}}  -> strips prefix
+```
+
+### `ordinal`
+
+Render an integer as an ordinal string.
+
+```
+{{var:course_order | ordinal}}   -> "7th"
+{{var:session | ordinal}}        -> "11th"
+```
+
+Works for 1st, 2nd, 3rd … 11th, 12th, 13th … 21st, 22nd, etc.
+
+### `decimals:n`
+
+Format a number to `n` decimal places.
+
+```
+{{var:gpa | decimals:2}}         -> "3.80"
+{{var:progress | decimals:0}}    -> "75"
+```
+
+### Chaining
+
+Filters compose naturally — each receives the output of the previous one:
+
+```
+{{var:course_name | replace:_,' ' | titlecase}}
+-> "Javascript Cards"
+
+{{var:missing_var | default:3 | ordinal}}
+-> "3rd"
+
+{{var:gpa | required | decimals:2}}
+-> warns if missing, otherwise formats to 2 decimal places
+```
+
+### Round-trip behaviour
+
+When a filtered variable is published to Canvas, the full expression is preserved in an HTML comment marker so that import restores it faithfully:
+
+```html
+<!-- {{var:course_name | replace:_,' ' | titlecase}} -->Javascript Cards<!-- {{/var:course_name | replace:_,' ' | titlecase}} -->
+```
+
+Comment markers survive Canvas API round-trips but are stripped if a user edits the page in the Canvas rich content editor. In that case the import pipeline falls back to plain text.
+
+### Type coercion
+
+All variable values are strings internally. Numeric filters (`ordinal`, `decimals`) attempt to parse the string and warn if they cannot:
+
+```
+⚠️  {{var:session | ordinal}}: 'ordinal' requires an integer, got 'eleven' — skipped
+```
+
+When a filter fails, the value passes through unchanged rather than crashing the build.
 
 ---
 
