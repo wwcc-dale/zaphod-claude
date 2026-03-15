@@ -1,7 +1,40 @@
 # Zaphod Project - Claude Onboarding Document
 
-**Last Updated:** February 7, 2026
+**Last Updated:** March 15, 2026
 **Purpose:** Comprehensive reference for AI assistants working on this project
+
+---
+
+## Recent Changes (2026-03-15)
+
+### `zaphod calendar` command
+- `zaphod/calendar.py` — core processing: `process_calendar()`, `emit_js()`, `emit_json()`, `emit_include()`
+- `zaphod/calendar_readers.py` — pluggable reader ABC; `YamlJsonReader` (YAML/JSON) and `WwccPdfReader` (pdfplumber, WWCC 212-day PDF format)
+- CLI: `zaphod calendar process <source> [--out] [--json] [--include] [--no-include] [--validate-only]`
+- Auto-writes `_all_courses/shared/calendar-data.md` — pipe-delimited `trl-calendar-data` include for Trillian
+- Spec for the matching Trillian component: `trillian/decisions/002-calendar-data-component.md`
+
+### `_all_courses/templates/` — program-wide template fallback
+- `load_template_files()` in `canvas_publish.py` falls back to `_all_courses/templates/<name>/` if course-local has nothing
+- Directory-level fallback only (never mix header/footer across levels — open/close HTML wrapper coupling)
+- Matching fallback in `zaphod-app/src-python/api/course.py` keeps preview in sync
+
+### Canvas Assignments/Pages list ordering fix
+- `iter_all_content_dirs()` in `publish_all.py` now sorts by `get_folder_sort_key()` before yielding
+- Loads `meta.json` per folder to read `position:` frontmatter for sort key
+
+### Code syntax highlighting
+- `LangAwareFormatter` in `canvas_publish.py` adds `language-*` class to `<code>` blocks
+- Enables Trillian/PrismJS syntax highlighting in Canvas pages
+
+### Documentation overhaul
+- `zaphod/user-guide/` → `docs/user-guide/` (user docs moved out of the Python package)
+- `LICENSE` moved to repo root
+- All 20 user guide files restructured with `## The Basics` / `## Digging Deeper` sections
+- `variable-filters.md` merged into `03-variables.md` (Digging Deeper)
+- New files: `docs/user-guide/17-calendar.md`, `docs/user-guide/authoring-quick-start.md`
+- CLI reference updated with `zaphod reorder` and `zaphod calendar process`
+- `13-templates.md` updated with `_all_courses/templates/` fallback docs
 
 ---
 
