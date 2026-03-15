@@ -4,16 +4,17 @@ This guide covers Zaphod's bidirectional import/export system, enabling you to m
 
 ---
 
-## Table of Contents
+## The Basics
 
-- [Overview](#overview)
-- [Export Features](#export-features)
-- [Import Features](#import-features)
-- [Common Workflows](#common-workflows)
-- [File Formats](#file-formats)
-- [Troubleshooting](#troubleshooting)
+**Export** (`zaphod export`) creates a portable `.imscc` course cartridge from your local files — useful for backups, sharing a course template with other instructors, or migrating to a different Canvas instance.
+
+**Import** (`zaphod import <course-id>` or `zaphod import course.imscc`) pulls an existing Canvas course (or cartridge file) into local markdown files so you can manage it with Zaphod.
+
+Both operations work offline — no Canvas credentials needed for export, and import only needs credentials when pulling from Canvas directly.
 
 ---
+
+## Digging Deeper
 
 ## Overview
 

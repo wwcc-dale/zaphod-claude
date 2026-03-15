@@ -4,6 +4,8 @@
 
 ---
 
+## The Basics
+
 ## Creating a Page
 
 Every page lives in its own folder with an `index.md` file:
@@ -57,6 +59,18 @@ Please read chapters 1-3 before class.
 - Headings, lists, bold, links — whatever you need
 
 ---
+
+## Publishing and Unpublishing
+
+Set `published: true` in frontmatter to make a page visible to students. Set it to `false` to hide it. Re-run `zaphod sync` after changing this.
+
+To edit a page, just edit its `index.md` file and run `zaphod sync` again.
+
+Pages are intentionally simple — most power comes from [Variables](03-variables.md) and [Includes](04-includes.md).
+
+---
+
+## Digging Deeper
 
 ## Frontmatter Options
 

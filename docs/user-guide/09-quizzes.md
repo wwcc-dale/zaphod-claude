@@ -4,6 +4,8 @@
 
 ---
 
+## The Basics
+
 ## How Quizzes Work in Zaphod
 
 Zaphod uses a two-layer approach to quizzes:
@@ -108,6 +110,12 @@ a) Red
 c) Green
 d) Yellow
 ```
+
+---
+
+## Digging Deeper
+
+### More Question Types
 
 #### Multiple Answer
 

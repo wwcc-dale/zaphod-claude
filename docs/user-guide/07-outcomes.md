@@ -4,9 +4,9 @@
 
 ---
 
-## Creating Outcomes
+## The Basics
 
-Create an `outcomes/outcomes.yaml` file in your course:
+Outcomes are course learning objectives that Canvas tracks for reporting. Create an `outcomes/outcomes.yaml` file in your course:
 
 ```
 my-course/
@@ -14,9 +14,7 @@ my-course/
     └── outcomes.yaml
 ```
 
----
-
-## Basic Structure
+## Minimal Structure
 
 ```yaml
 # outcomes/outcomes.yaml
@@ -54,7 +52,11 @@ course_outcomes:
         description: "No Evidence"
 ```
 
+Run `zaphod sync` to push outcomes to Canvas.
+
 ---
+
+## Digging Deeper
 
 ## Outcome Fields
 

@@ -4,7 +4,9 @@
 
 ---
 
-## Simple Overview
+## The Basics
+
+## Core Directory Structure
 
 ```text
 curriculum-workshop/
@@ -32,7 +34,11 @@ curriculum-workshop/
 └─ zaphod/                      # Zaphod scripts (ignore)
 ```
 
+The three things every course needs: a `content/` folder for your pages and assignments, a `shared/` folder for variables and includes, and a `zaphod.yaml` config file with your course ID.
+
 ---
+
+## Digging Deeper
 
 ## Key Directories
 

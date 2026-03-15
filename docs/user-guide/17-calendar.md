@@ -4,24 +4,11 @@
 
 ---
 
-## What It Does and Why
+## The Basics
 
-Trillian's Canvas components (term calendars, progress dashboards) need to know your institution's academic calendar — term dates, holidays, and instruction day counts. Rather than hand-editing JSON, you maintain a readable YAML (or JSON) source file and let Zaphod compute the derived values.
+`zaphod calendar process` takes a YAML file describing your academic year (term dates and holidays) and produces a JavaScript data file that Trillian's Canvas components (progress dashboards, term calendars) read at runtime.
 
-**What Zaphod computes automatically:**
-- Instruction day counts per term (weekdays in [start, end] minus holidays and closures)
-- Validation against a declared total if your source includes `totalInstructionDays`
-
-**What it writes:**
-- A JS global (`window.TRL_CALENDAR = {...}`) for Canvas Custom JS
-- Optionally a processed JSON file for inspection
-- A markdown include file for use in Canvas page templates
-
----
-
-## Source File Formats
-
-### YAML (recommended)
+## YAML Source Format
 
 ```yaml
 year: "2025-26"
@@ -83,11 +70,19 @@ terms:
 - `terms[].start` / `terms[].end` — ISO 8601 dates (inclusive)
 - `terms[].holidays` — List of dates excluded from instruction day count
 
-### JSON
+**Basic invocation:**
 
-JSON is accepted with the same structure. Use YAML for human-authored files; JSON is useful when generating calendar data programmatically.
+```bash
+zaphod calendar process calendar-source-2025-26.yaml
+```
 
-### PDF (WWCC format)
+This prints the day-count report to the terminal and writes a markdown include to `_all_courses/shared/calendar-data.md`. Use `{{include:calendar-data}}` in your Canvas pages to embed the component.
+
+---
+
+## Digging Deeper
+
+## PDF Support (WWCC format)
 
 For institutions using the WWCC academic calendar PDF format, Zaphod can extract term data directly:
 
@@ -95,7 +90,19 @@ For institutions using the WWCC academic calendar PDF format, Zaphod can extract
 zaphod calendar process "2025-26 wwcc calendar.pdf"
 ```
 
-This uses `pdfplumber` to parse the PDF and extract term dates and holiday tables. The PDF reader handles the WWCC layout specifically — other PDF formats are not currently supported.
+This uses `pdfplumber` to parse the PDF. The PDF reader handles the WWCC layout specifically — other PDF formats are not currently supported.
+
+---
+
+## All Output Flags
+
+| Option | Description |
+|--------|-------------|
+| `--out <file>` | Write JS output to file (default: stdout) |
+| `--json <file>` | Also write processed JSON |
+| `--include <path>` | Override include output path |
+| `--no-include` | Skip writing the markdown include |
+| `--validate-only` | Print day-count report only, no output written |
 
 ---
 

@@ -4,6 +4,8 @@
 
 ---
 
+## The Basics
+
 ## Creating an Assignment
 
 Assignments live in folders ending with `.assignment`:
@@ -55,13 +57,34 @@ See the rubric attached to this assignment.
 
 ---
 
-## Frontmatter Options
+## Essential Frontmatter
 
-### Required
+| Field | Description | Default |
+|-------|-------------|---------|
+| `name:` | Assignment title in Canvas | Required |
+| `modules:` | Module placement | None |
+| `published:` | Visible to students | `false` |
+| `points_possible:` | Maximum points | `0` |
+| `due_at:` | Due date/time (ISO format) | None |
+| `submission_types:` | List of allowed types (see below) | `none` |
 
-| Field | Description |
-|-------|-------------|
-| `name:` | Assignment title in Canvas |
+**Submission types:**
+- `online_upload` — File upload
+- `online_text_entry` — Text box
+- `online_url` — URL submission
+- `media_recording` — Audio/video
+- `none` — No submission (announcements, etc.)
+
+**Due date example:**
+```yaml
+due_at: "2026-02-15T23:59:00Z"
+```
+
+---
+
+## Digging Deeper
+
+## All Frontmatter Options
 
 ### Grading
 
@@ -74,15 +97,8 @@ See the rubric attached to this assignment.
 
 | Field | Description | Default |
 |-------|-------------|---------|
-| `submission_types:` | List of allowed types (see below) | `none` |
+| `submission_types:` | List of allowed types | `none` |
 | `allowed_extensions:` | File extensions for uploads | Any |
-
-**Submission types:**
-- `online_upload` — File upload
-- `online_text_entry` — Text box
-- `online_url` — URL submission
-- `media_recording` — Audio/video
-- `none` — No submission (announcements, etc.)
 
 ### Due Dates
 
@@ -103,8 +119,6 @@ lock_at: "2026-02-16T23:59:00Z"
 
 | Field | Description | Default |
 |-------|-------------|---------|
-| `published:` | Visible to students | `false` |
-| `modules:` | Module placement | None |
 | `position:` | Order in module | Auto |
 | `description:` | Canvas description (if different from body) | Body content |
 

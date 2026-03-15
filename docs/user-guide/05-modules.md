@@ -4,18 +4,9 @@
 
 ---
 
-## Two Ways to Organize
+## The Basics
 
-Zaphod supports two approaches to module organization:
-
-1. **Module Folders** — Group content in `.module` directories (recommended)
-2. **Frontmatter Lists** — Specify modules in each page's frontmatter
-
-You can mix both approaches!
-
----
-
-## Method 1: Module Folders (Recommended)
+## Module Folders (Recommended)
 
 Create folders ending in `.module` to automatically organize content:
 
@@ -63,6 +54,8 @@ content/
 But `.module` suffix is now preferred.
 
 ---
+
+## Digging Deeper
 
 ## Method 2: Frontmatter Lists
 

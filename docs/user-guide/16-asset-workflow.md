@@ -4,13 +4,28 @@ A practical guide to managing images, videos, documents, and other media files i
 
 ---
 
-## Quick Answer: Where Should I Put My Files?
+## The Basics
 
-**TL;DR:**
-- 📄 **Page-specific assets** → Put in the `.page/` or `.assignment/` folder
-- 🌍 **Shared assets** (logos, common images) → Put in `assets/` folder
-- 🎬 **Videos** → Put in `assets/videos/`
-- 📦 **Don't worry about duplicates** → Registry automatically handles them!
+The simplest workflow: drop image and media files in the `assets/` folder and reference them by filename in your pages. Zaphod uploads them to Canvas on the first sync and skips re-uploading unchanged files.
+
+```markdown
+![Course Logo](course-logo.png)
+{{video:intro-lecture.mp4}}
+```
+
+Zaphod searches `assets/` automatically — no need to specify the full path unless you have multiple files with the same name.
+
+---
+
+## Digging Deeper
+
+## Where Should I Put My Files?
+
+**Quick guide:**
+- **Page-specific assets** → Put in the `.page/` or `.assignment/` folder
+- **Shared assets** (logos, common images) → Put in `assets/` folder
+- **Videos** → Put in `assets/videos/`
+- **Don't worry about duplicates** → Registry automatically handles them!
 
 ---
 

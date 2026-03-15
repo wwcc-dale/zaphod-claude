@@ -4,11 +4,15 @@
 
 ---
 
-## Overview
+## The Basics
 
-When you run `zaphod sync`, several scripts run in sequence to transform your local files into Canvas content. Think of it as an assembly line where each step has a specific job.
+When you run `zaphod sync`, Zaphod reads all your `index.md` files, processes variables and includes, uploads any changed assets, then creates or updates pages, assignments, quizzes, and modules in Canvas. Finally it cleans up any content that no longer exists locally.
+
+That's the full picture. Use `zaphod sync --watch` to run this automatically whenever you save a file, or `zaphod sync --dry-run` to preview what would change without touching Canvas.
 
 ---
+
+## Digging Deeper
 
 ## Pipeline Steps
 

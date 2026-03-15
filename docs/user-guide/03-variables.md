@@ -4,6 +4,8 @@
 
 ---
 
+## The Basics
+
 ## Why Use Variables?
 
 Imagine you mention your office hours on 10 different pages. Without variables, updating your office hours means editing 10 files. With variables, you change it in one place:
@@ -19,24 +21,13 @@ Then every page using `{{var:office_hours}}` updates automatically.
 
 ## Where Variables Come From
 
-Variables can be defined at three levels (later levels override earlier):
-
-### 1. Global Level (lowest priority)
-
-Create `_all_courses/shared/variables.yaml` in your courses root:
+Variables are defined in `shared/variables.yaml` in your course folder:
 
 ```
-courses/
-├── _all_courses/
-│   └── shared/
-│       └── variables.yaml    # Shared across ALL courses
-├── CS101/
-└── CS102/
+my-course/
+└── shared/
+    └── variables.yaml
 ```
-
-Best for: Institution name, standard policies, common links
-
-### 2. Course Level
 
 Create `shared/variables.yaml` in your course:
 
@@ -49,22 +40,7 @@ instructor_email: "smith@university.edu"
 office_hours: "MW 2-4pm"
 ```
 
-Best for: Course-specific values used across many pages
-
-### 3. Page Level (highest priority)
-
-Define in frontmatter to override course-level values:
-
-```yaml
----
-name: "Guest Lecture"
-instructor_name: "Dr. Jones"    # Overrides course-level for this page only
----
-
-Today's lecture by {{var:instructor_name}}
-```
-
-Result: "Today's lecture by Dr. Jones"
+Best for: Course-specific values used across many pages.
 
 ---
 
@@ -219,6 +195,40 @@ academic_integrity: "See the University Academic Integrity Policy"
 ✅ **Combine with includes** — Create reusable templates with variable placeholders
 
 ✅ **Variables are text only** — They can't contain multi-line markdown
+
+---
+
+## Digging Deeper
+
+## Global Level (`_all_courses/`)
+
+For values shared across all your courses, create `_all_courses/shared/variables.yaml`:
+
+```
+courses/
+├── _all_courses/
+│   └── shared/
+│       └── variables.yaml    # Shared across ALL courses
+├── CS101/
+└── CS102/
+```
+
+Best for: Institution name, standard policies, common links.
+
+## Page Level Overrides
+
+Define a variable in frontmatter to override the course-level value for that page only:
+
+```yaml
+---
+name: "Guest Lecture"
+instructor_name: "Dr. Jones"    # Overrides course-level for this page only
+---
+
+Today's lecture by {{var:instructor_name}}
+```
+
+Result: "Today's lecture by Dr. Jones"
 
 ---
 

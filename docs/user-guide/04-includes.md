@@ -4,6 +4,8 @@
 
 ---
 
+## The Basics
+
 ## Why Use Includes?
 
 Some content appears on many pages:
@@ -62,6 +64,8 @@ Write a 500-word essay...
 The `{{include:late_policy}}` is replaced with the entire contents of `late_policy.md`, with any `{{var:...}}` placeholders filled in.
 
 ---
+
+## Digging Deeper
 
 ## Include Syntax
 

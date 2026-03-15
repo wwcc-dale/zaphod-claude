@@ -4,6 +4,8 @@
 
 ---
 
+## The Basics
+
 ## Quick Start
 
 Create a rubric file in your assignment folder:
@@ -34,9 +36,11 @@ criteria:
         points: 5
 ```
 
-Run `zaphod sync rubrics` to push it to Canvas.
+Run `zaphod sync rubrics` to push it to Canvas. This is all most instructors need for basic grading.
 
 ---
+
+## Digging Deeper
 
 ## Rubric Structure
 

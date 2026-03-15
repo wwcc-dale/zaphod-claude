@@ -2,6 +2,12 @@
 
 The Asset Registry keeps source files pure by tracking Canvas URL mappings separately, eliminating the need to mutate source.md files with Canvas-specific URLs.
 
+## The Basics
+
+The Asset Registry runs automatically — you don't need to do anything. When you sync, Zaphod uploads your assets to Canvas and records the mapping in `_course_metadata/asset_registry.json`. Your source files always keep local references; the Canvas URLs are only used in-memory during publishing.
+
+## Digging Deeper
+
 ## Overview
 
 ### Problem Solved

@@ -4,24 +4,11 @@ Zaphod templates provide automatic header/footer wrapping for pages and assignme
 
 ---
 
-## Overview
+## The Basics
 
 **Templates** wrap your content with consistent headers and footers during publishing. Unlike includes (which you manually insert), templates are applied automatically to all pages.
 
-### When to Use Templates
-
-✅ **Use templates for:**
-- Course-wide headers (navigation, announcements)
-- Consistent footers (contact info, policies)
-- Branding and styling
-- Content that appears on *every* page
-
-❌ **Use includes for:**
-- Content inserted in *some* pages
-- Conditional content blocks
-- Reusable snippets within content
-
----
+Use templates for content that appears on every page (navigation, contact info, branding). Use includes for content inserted in only some pages.
 
 ## Directory Structure
 
@@ -30,49 +17,14 @@ Templates live in `templates/` at your course root:
 ```
 my-course/
 ├── templates/
-│   ├── default/              # Used by default
-│   │   ├── header.html
-│   │   ├── header.md
-│   │   ├── footer.md
-│   │   └── footer.html
-│   ├── fancy/                # Alternative template set
-│   │   ├── header.html
-│   │   ├── header.md
-│   │   ├── footer.md
-│   │   └── footer.html
-│   └── minimal/              # Another option
-│       └── footer.md
+│   └── default/              # Used by default
+│       ├── header.html
+│       ├── header.md
+│       ├── footer.md
+│       └── footer.html
 ├── content/
 └── ...
 ```
-
----
-
-### Program-Wide Templates (`_all_courses/`)
-
-If your courses share a common `_all_courses/` directory (see [Variables](03-variables.md#global-level-lowest-priority)), you can place a shared template set there:
-
-```
-courses/
-├── _all_courses/
-│   └── templates/
-│       └── default/        # Fallback for all courses without local templates
-│           ├── header.md
-│           └── footer.md
-├── CS101/                  # No local templates/ → uses _all_courses/templates/
-├── CS102/
-│   └── templates/
-│       └── default/        # Local templates/ → this takes precedence
-│           └── header.md
-└── ...
-```
-
-**Fallback rules:**
-- Zaphod looks for `<course>/templates/<name>/` first
-- If that directory has no template files, it falls back to `_all_courses/templates/<name>/`
-- Fallback is directory-level only — a course either fully uses its own template set OR the shared one; header/footer files are never mixed across levels (this avoids mismatched HTML wrappers)
-
-**Use case:** All courses share a standard header/footer; individual courses can override by adding their own `templates/default/`.
 
 ---
 
@@ -125,22 +77,32 @@ Templates wrap your content in this order:
 
 ---
 
-## Using Templates
+## Default Behaviour
 
-### Default Behavior
+Pages automatically use `templates/default/` — no configuration needed. Just create the folder and add your `header.md` or `footer.md`.
 
-Pages automatically use `templates/default/`:
-
-```yaml
----
-name: "My Page"
-# Uses templates/default/ automatically
 ---
 
-Your content here.
+## Example: Contact Footer
+
+**Create:** `templates/default/footer.md`
+
+```markdown
+---
+
+## Need Help?
+
+- **Email:** instructor@university.edu
+- **Office Hours:** Mon/Wed 2-4pm, Room 301
 ```
 
-### Choosing a Template Set
+Run `zaphod sync` — every page now has this footer.
+
+---
+
+## Digging Deeper
+
+## Choosing a Template Set
 
 Use `template:` in frontmatter to choose a different set:
 
@@ -266,6 +228,32 @@ name: "API Reference"
 template: "minimal"      # Less clutter
 ---
 ```
+
+---
+
+## Program-Wide Templates (`_all_courses/`)
+
+If your courses share a common `_all_courses/` directory, you can place a shared template set there as a fallback for all courses:
+
+```
+courses/
+├── _all_courses/
+│   └── templates/
+│       └── default/        # Fallback for all courses without local templates
+│           ├── header.md
+│           └── footer.md
+├── CS101/                  # No local templates/ → uses _all_courses/templates/
+├── CS102/
+│   └── templates/
+│       └── default/        # Local templates/ → this takes precedence
+│           └── header.md
+└── ...
+```
+
+**Fallback rules:**
+- Zaphod looks for `<course>/templates/<name>/` first
+- If that directory has no template files, it falls back to `_all_courses/templates/<name>/`
+- Fallback is directory-level only — a course either fully uses its own template set OR the shared one; header/footer files are never mixed across levels
 
 ---
 

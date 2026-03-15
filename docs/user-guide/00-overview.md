@@ -191,21 +191,40 @@ This shows you exactly what Zaphod would create, update, or delete — but doesn
 
 ## What's Next?
 
-This overview covered the basics. The rest of this guide goes deeper into each topic:
+This overview covered the basics. The rest of this guide goes deeper into each topic.
+
+## The Basics
+
+Core skills any instructor needs:
 
 | Guide | What You'll Learn |
 |-------|-------------------|
 | [Pages](01-pages.md) | Creating and formatting pages |
 | [Assignments](02-assignments.md) | Assignments, due dates, and submission types |
-| [Variables](03-variables.md) | Reusing content with variables |
+| [Modules](05-modules.md) | Organising your course structure |
+| [Variables](03-variables.md) | Reusing values across pages |
 | [Includes](04-includes.md) | Sharing content blocks |
-| [Modules](05-modules.md) | Organizing your course |
-| [Rubrics](06-rubrics.md) | Creating grading rubrics |
-| [Outcomes](07-outcomes.md) | Learning outcomes |
-| [Assets](08-assets.md) | Images, videos, and files |
-| [Quizzes](09-quizzes.md) | Creating quizzes and question banks |
-| [Pipeline](10-pipeline.md) | How syncing works |
+| [Assets](08-assets.md) | Images, videos, and file downloads |
+| [Quizzes](09-quizzes.md) | Creating quizzes from text files |
+
+## Digging Deeper
+
+Advanced features and full reference:
+
+| Guide | What You'll Learn |
+|-------|-------------------|
+| [Rubrics](06-rubrics.md) | Grading rubrics, shared criteria, outcome alignment |
+| [Outcomes](07-outcomes.md) | Course learning outcomes |
+| [Templates](13-templates.md) | Program-wide headers and footers |
+| [Variable Filters](variable-filters.md) | Transforming variable values |
+| [Calendar](17-calendar.md) | Academic calendar processing |
+| [Import & Export](14-import-export.md) | Course cartridge import/export |
+| [Asset Registry](15-asset-registry.md) | How asset deduplication works |
+| [Asset Workflow](16-asset-workflow.md) | Team asset management strategies |
+| [Large Media](11-manifest-hydrate.md) | Keeping videos out of Git |
+| [The Sync Pipeline](10-pipeline.md) | How syncing works under the hood |
 | [File Layout](15-file-layout.md) | Complete directory reference |
+| [CLI Reference](12-cli-reference.md) | All commands and options |
 
 ---
 

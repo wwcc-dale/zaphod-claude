@@ -8,11 +8,30 @@ left-to-right:
 {{var:variable_name | filter1 | filter2:arg}}
 ```
 
-Filters are resolved in `frontmatter_to_meta.py` (source content) and
-`canvas_publish.py` (templates). The full expression — including filters — is
-preserved in round-trip HTML comment markers so import restores it faithfully.
+---
+
+## The Basics
+
+Filters transform variable values at publish time. The most useful for most instructors:
+
+**`default:value`** — shows a fallback when the variable isn't set:
+
+```
+{{var:instructor | default:TBA}}    -> "TBA" if instructor is not defined
+```
+
+**`ordinal`** — formats a number as an ordinal:
+
+```
+{{var:session | ordinal}}           -> "7th"
+{{var:course_order | ordinal}}      -> "1st", "2nd", "3rd" ...
+```
+
+That's all most pages need. The full filter list is below.
 
 ---
+
+## Digging Deeper
 
 ## Filter Reference
 

@@ -4,6 +4,14 @@
 
 ---
 
+## The Basics
+
+If your course has video files, this page explains how to keep them out of Git while still sharing them with collaborators. The short version: you store large files on a shared drive or server, commit a small manifest file that tracks checksums, and collaborators run `zaphod hydrate` to download the files they need.
+
+---
+
+## Digging Deeper
+
 ## The Problem
 
 Video files and other large media can make your Git repository unwieldy:

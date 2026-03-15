@@ -4,38 +4,63 @@
 
 ---
 
-## Quick Reference
+## The Basics
 
 ```bash
-# Course Setup
-zaphod init [--course-id ID]              # Initialize new course
-zaphod info                               # Show course status
-zaphod validate [-v]                      # Check for errors
-
-# Content
-zaphod list [--type TYPE]                 # List content
-zaphod new --type TYPE --name NAME        # Create content
-
-# Syncing
+# Day-to-day commands
 zaphod sync [--watch] [--dry-run]         # Sync to Canvas
-zaphod prune [--dry-run]                  # Clean up orphans
-
-# Media
-zaphod manifest                           # Build media manifest
-zaphod hydrate --source PATH              # Download media
-
-# Export
-zaphod export [-o FILE]                   # Export course
-
-# Calendar
-zaphod calendar process <source>          # Process academic calendar
-
-# Other
-zaphod reorder                            # Stamp position/session/module from folder structure
+zaphod validate [-v]                      # Check for errors
+zaphod list [--type TYPE]                 # List content
+zaphod info                               # Show course status
 zaphod version                            # Show version
 ```
 
+### zaphod sync
+
+Sync local content to Canvas. The most important command — run this after editing files.
+
+```bash
+zaphod sync              # Sync once
+zaphod sync --watch      # Auto-sync on file changes
+zaphod sync --dry-run    # Preview what would happen
+zaphod sync --no-prune   # Sync without cleaning up
+```
+
+### zaphod validate
+
+Check your content for errors before syncing.
+
+```bash
+zaphod validate          # Quick check
+zaphod validate -v       # Detailed output
+```
+
+### zaphod list
+
+List course content.
+
+```bash
+zaphod list                        # List everything
+zaphod list --type assignment      # Only assignments
+zaphod list --module "Week 1"      # Content in a module
+```
+
+### zaphod info
+
+Show course information and status (course ID, last sync time, content statistics).
+
+### zaphod new
+
+Create a new content item.
+
+```bash
+zaphod new --type page --name "Welcome"
+zaphod new --type assignment --name "Essay 1" --module "Week 2"
+```
+
 ---
+
+## Digging Deeper
 
 ## Command Details
 
@@ -85,9 +110,7 @@ zaphod init --force
 
 ---
 
-### zaphod sync
-
-Sync local content to Canvas.
+### zaphod sync (full options)
 
 ```bash
 zaphod sync [--watch] [--course-id ID] [--dry-run] [--no-prune] [--assets-only] [--export]
@@ -100,121 +123,6 @@ zaphod sync [--watch] [--course-id ID] [--dry-run] [--no-prune] [--assets-only] 
 - `--no-prune` — Skip the cleanup step
 - `--assets-only` — Only upload media files
 - `--export` — Export to Common Cartridge after sync completes
-
-**Pipeline steps:**
-1. Process frontmatter from index.md files
-2. Publish pages, assignments, links, files
-3. Import question banks
-4. Sync quizzes
-5. Organize content into modules
-6. Import learning outcomes
-7. Sync rubrics to assignments
-8. Clean up orphaned content (unless --no-prune)
-
-**Examples:**
-```bash
-# Sync once
-zaphod sync
-
-# Auto-sync on file changes
-zaphod sync --watch
-
-# Preview what would happen
-zaphod sync --dry-run
-
-# Sync without cleaning up
-zaphod sync --no-prune
-```
-
----
-
-### zaphod list
-
-List course content.
-
-```bash
-zaphod list [--type TYPE] [--module MODULE] [--json]
-```
-
-**Options:**
-- `--type TYPE` — Filter by type: `page`, `assignment`, `quiz`, `link`, `file`, `all`
-- `--module MODULE` — Filter by module name
-- `--json` — Output as JSON
-
-**Examples:**
-```bash
-# List everything
-zaphod list
-
-# Only assignments
-zaphod list --type assignment
-
-# Only quizzes
-zaphod list --type quiz
-
-# Content in a specific module
-zaphod list --module "Week 1"
-
-# JSON output for scripting
-zaphod list --json
-```
-
----
-
-### zaphod new
-
-Create a new content item.
-
-```bash
-zaphod new --type TYPE --name NAME [--module MODULE]
-```
-
-**Options:**
-- `--type TYPE` — Required. One of: `page`, `assignment`, `quiz`, `link`
-- `--name NAME` — Required. Display name for the content
-- `--module MODULE` — Module(s) to add content to (can be repeated)
-
-**Examples:**
-```bash
-# Create a page
-zaphod new --type page --name "Welcome"
-
-# Create an assignment in a module
-zaphod new --type assignment --name "Essay 1" --module "Week 2"
-
-# Create a quiz in multiple modules
-zaphod new --type quiz --name "Midterm" --module "Week 5" --module "Exams"
-```
-
----
-
-### zaphod validate
-
-Validate course content before syncing.
-
-```bash
-zaphod validate [--verbose]
-```
-
-**Options:**
-- `--verbose, -v` — Show detailed output
-
-**What it checks:**
-- Required frontmatter fields
-- Valid YAML syntax
-- Missing include files
-- Quiz questions without correct answers
-- Rubric configuration errors
-- Undefined module references
-
-**Examples:**
-```bash
-# Quick check
-zaphod validate
-
-# Detailed output
-zaphod validate -v
-```
 
 ---
 
@@ -407,33 +315,6 @@ Processing 2025-26 calendar for WWCC
    Total instruction days: 203
 
    All counts look good.
-```
-
----
-
-### zaphod info
-
-Show course information and status.
-
-```bash
-zaphod info
-```
-
-**Displays:**
-- Course ID and root directory
-- Last sync time
-- Content statistics (pages, assignments, quizzes, etc.)
-- Configuration status
-- Quick health check
-
----
-
-### zaphod version
-
-Show version information.
-
-```bash
-zaphod version
 ```
 
 ---

@@ -4,6 +4,8 @@
 
 ---
 
+## The Basics
+
 ## Where to Put Assets
 
 You have two options:
@@ -77,6 +79,8 @@ If you have multiple files with the same name:
 Use explicit relative paths to avoid ambiguity.
 
 ---
+
+## Digging Deeper
 
 ## Handling Duplicate Filenames
 
