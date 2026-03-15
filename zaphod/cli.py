@@ -1299,46 +1299,64 @@ def calendar():
 
 @calendar.command('process')
 @click.argument('source', type=click.Path(exists=True, dir_okay=False, path_type=Path))
-@click.option('--out', type=click.Path(), help='Write JS output to file (default: stdout)')
+@click.option('--out', 'js_out', type=click.Path(), help='Write JS output to file (default: stdout)')
 @click.option('--json', 'json_out', type=click.Path(), help='Also write processed JSON to file')
-@click.option('--include', 'include_out', type=click.Path(), help='Write Trillian markdown include to file')
+@click.option('--include', 'include_out', type=click.Path(),
+              help='Override include output path (default: _all_courses/shared/calendar-data.md)')
+@click.option('--no-include', is_flag=True, help='Skip writing the include file')
 @click.option('--validate-only', is_flag=True, help='Count days and report without writing output')
-def calendar_process(source: Path, out: str, json_out: str, include_out: str, validate_only: bool):
+def calendar_process(source: Path, js_out: str, json_out: str, include_out: str, no_include: bool, validate_only: bool):
     """
     Process a calendar source file into TRL_CALENDAR format
 
     Reads a YAML, JSON, or PDF academic calendar, counts instruction days per
-    term (weekdays minus holidays), validates the total, and emits output in
-    one or more formats.
+    term (weekdays minus holidays), validates the total, and writes:
+
+      1. calendar-data.md → _all_courses/shared/ (Trillian include, automatic)
+      2. JS assignment    → --out file or stdout (for Canvas Custom JS)
+      3. JSON             → --json file (optional, for inspection)
 
     Examples:
         zaphod calendar process calendar-2025-26.yaml
         zaphod calendar process calendar-2025-26.yaml --out calendar-global.js
-        zaphod calendar process calendar-2025-26.yaml --out calendar-global.js --json calendar.json
-        zaphod calendar process calendar-2025-26.yaml --include _all_courses/shared/calendar-data.md
         zaphod calendar process calendar-2025-26.yaml --validate-only
+        zaphod calendar process calendar-2025-26.yaml --no-include --out calendar-global.js
     """
     from zaphod.calendar import process_calendar, emit_js, emit_json, emit_include
+    from zaphod.frontmatter_to_meta import find_all_courses_dir
 
     data = process_calendar(source)
 
     if validate_only:
         return
 
+    # --- Trillian include (automatic unless suppressed) ---
+    if not no_include:
+        if include_out:
+            dest = Path(include_out)
+        else:
+            all_courses = find_all_courses_dir()
+            if all_courses:
+                dest = all_courses / "shared" / "calendar-data.md"
+            else:
+                click.echo("⚠  _all_courses/ not found — skipping include. Use --include to set path explicitly.")
+                dest = None
+        if dest:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_text(emit_include(data), encoding="utf-8")
+            click.echo(f"Wrote  {dest}")
+
+    # --- JS output ---
     js = emit_js(data)
-    if out:
-        Path(out).write_text(js, encoding="utf-8")
-        click.echo(f"Wrote  {out}")
+    if js_out:
+        Path(js_out).write_text(js, encoding="utf-8")
+        click.echo(f"Wrote  {js_out}")
     else:
         click.echo(js)
 
     if json_out:
         Path(json_out).write_text(emit_json(data), encoding="utf-8")
         click.echo(f"Wrote  {json_out}")
-
-    if include_out:
-        Path(include_out).write_text(emit_include(data), encoding="utf-8")
-        click.echo(f"Wrote  {include_out}")
 
 
 # ============================================================================
