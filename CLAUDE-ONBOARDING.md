@@ -531,7 +531,7 @@ ZAPHOD_EXPORT_ON_SYNC=1             # Auto-export after sync
 ## Documentation vs Reality (Critical Findings)
 
 ### ✅ Template System - FULLY IMPLEMENTED
-**Documentation:** Extensive user guide (`13-templates.md`)
+**Documentation:** Extensive user guide (`docs/user-guide/13-templates.md`)
 
 **Reality:** ✅ **Completely implemented** in `canvas_publish.py`
 - `_sanitize_template_name()` — path traversal validation
@@ -555,10 +555,10 @@ ZAPHOD_EXPORT_ON_SYNC=1             # Auto-export after sync
 `--offline` flag removed from docs; export already works offline by default.
 
 ### ✅ Extra Pipeline Steps - Documented
-Watch mode steps 9-11 now documented in `user-guide/10-pipeline.md`.
+Watch mode steps 9-11 now documented in `docs/user-guide/10-pipeline.md`.
 
 ### ✅ Asset Registry - Documented
-Covered in `user-guide/15-asset-registry.md` and `user-guide/16-asset-workflow.md`.
+Covered in `docs/user-guide/15-asset-registry.md` and `docs/user-guide/16-asset-workflow.md`.
 
 ---
 
@@ -875,16 +875,19 @@ zaphod import course.imscc           # Import from cartridge
     ├── 06-IDEAS.md                     # Future ideas
     ├── 07-TODO.md                      # Pending work
     ├── 08-DEPRECATED.md                # Removed features
-    ├── 99-SECURITY-AUDIT-V2.md         # Security audit
-    └── user-guide/                     # User documentation
-        ├── 00-overview.md
-        ├── 08-assets.md                # Assets + video quality presets
-        ├── 10-pipeline.md              # Sync pipeline (all 11 steps)
-        ├── 12-cli-reference.md         # CLI + zaphod.yaml config ref
-        ├── 14-import-export.md         # Import/export + round-trip
-        ├── 15-asset-registry.md        # Asset Registry reference
-        ├── 15-file-layout.md           # Course directory layout
-        └── 16-asset-workflow.md        # Asset workflow guide
+    └── 99-SECURITY-AUDIT-V2.md         # Security audit
+docs/
+└── user-guide/                     # User documentation
+    ├── 00-overview.md
+    ├── 08-assets.md                # Assets + video quality presets
+    ├── 10-pipeline.md              # Sync pipeline (all 11 steps)
+    ├── 12-cli-reference.md         # CLI + zaphod.yaml config ref
+    ├── 14-import-export.md         # Import/export + round-trip
+    ├── 15-asset-registry.md        # Asset Registry reference
+    ├── 15-file-layout.md           # Course directory layout
+    ├── 16-asset-workflow.md        # Asset workflow guide
+    ├── 17-calendar.md              # Calendar processing guide
+    └── variable-filters.md        # Variable filter reference
 ```
 
 ---

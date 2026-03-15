@@ -122,7 +122,7 @@ zaphod import course.imscc --output ./imported-course
 - **Collaboration:** Share courses via version control
 - **Round-Trip:** Export → Edit → Import → Sync
 
-See [user-guide/14-import-export.md](zaphod/user-guide/14-import-export.md) for complete documentation.
+See [user-guide/14-import-export.md](docs/user-guide/14-import-export.md) for complete documentation.
 
 ---
 

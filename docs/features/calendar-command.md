@@ -1,5 +1,7 @@
 # Feature: `zaphod calendar` — Academic Calendar Processing
 
+> **Status: Implemented.** See [user guide](../user-guide/17-calendar.md) for usage. This document records the original design rationale and data contract.
+
 ## Summary
 
 Add a `zaphod calendar` CLI command (and corresponding Python module) that

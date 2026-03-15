@@ -48,6 +48,34 @@ my-course/
 
 ---
 
+### Program-Wide Templates (`_all_courses/`)
+
+If your courses share a common `_all_courses/` directory (see [Variables](03-variables.md#global-level-lowest-priority)), you can place a shared template set there:
+
+```
+courses/
+├── _all_courses/
+│   └── templates/
+│       └── default/        # Fallback for all courses without local templates
+│           ├── header.md
+│           └── footer.md
+├── CS101/                  # No local templates/ → uses _all_courses/templates/
+├── CS102/
+│   └── templates/
+│       └── default/        # Local templates/ → this takes precedence
+│           └── header.md
+└── ...
+```
+
+**Fallback rules:**
+- Zaphod looks for `<course>/templates/<name>/` first
+- If that directory has no template files, it falls back to `_all_courses/templates/<name>/`
+- Fallback is directory-level only — a course either fully uses its own template set OR the shared one; header/footer files are never mixed across levels (this avoids mismatched HTML wrappers)
+
+**Use case:** All courses share a standard header/footer; individual courses can override by adding their own `templates/default/`.
+
+---
+
 ## Template Files
 
 Each template set can have up to 4 files:
@@ -408,6 +436,7 @@ The `role="main"` attribute provides semantic meaning for accessibility.
 2. Files are named correctly (e.g., `header.md` not `header.markdown`)
 3. Template set name matches: `template: "fancy"` → `templates/fancy/`
 4. Re-sync after changing templates
+5. If using program-wide templates, verify files exist in `_all_courses/templates/<name>/` — the fallback only activates when the course-local directory has no template files
 
 ### Markdown not rendering
 

@@ -247,6 +247,20 @@ Each level overrides values from lower levels.
 
 ---
 
+## Variable Filters
+
+Variables support an optional filter chain for transforming values at publish time:
+
+```
+{{var:session | ordinal}}           -> "7th"
+{{var:course_name | titlecase}}     -> "Introduction To Programming"
+{{var:missing | default:TBA}}       -> "TBA"
+```
+
+See [Variable Filters](variable-filters.md) for the full filter reference.
+
+---
+
 ## Next Steps
 
 - [Includes](04-includes.md) — Share larger content blocks

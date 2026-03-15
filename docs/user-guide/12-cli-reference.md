@@ -27,7 +27,11 @@ zaphod hydrate --source PATH              # Download media
 # Export
 zaphod export [-o FILE]                   # Export course
 
+# Calendar
+zaphod calendar process <source>          # Process academic calendar
+
 # Other
+zaphod reorder                            # Stamp position/session/module from folder structure
 zaphod version                            # Show version
 ```
 
@@ -214,6 +218,30 @@ zaphod validate -v
 
 ---
 
+### zaphod reorder
+
+Stamp derived position/session/module values from folder structure into frontmatter.
+
+```bash
+zaphod reorder
+```
+
+**What it does:**
+- Sets `position:` (1-based rank within module) from folder order
+- Sets `session:` from `s{nn}` folder prefix (decimal like `3.1` when multiple items share a session)
+- Sets `module:` from numeric prefix of the `.module` ancestor folder
+- Writes `course_order:` to `shared/variables.yaml` from numeric prefix of the course root
+
+All changes are idempotent. Run after reorganising content folders to keep frontmatter in sync.
+
+**Example:**
+```bash
+zaphod reorder
+# Updates position:/session:/module: in all index.md files
+```
+
+---
+
 ### zaphod prune
 
 Remove orphaned Canvas content.
@@ -322,6 +350,63 @@ zaphod export --output my-course.imscc
 
 # Override title
 zaphod export --title "Introduction to Biology"
+```
+
+---
+
+### zaphod calendar process
+
+Process an academic calendar source file into Trillian component data.
+
+```bash
+zaphod calendar process <source> [OPTIONS]
+```
+
+**Arguments:**
+- `<source>` — Path to a YAML, JSON, or PDF calendar source file
+
+**Options:**
+- `--out <file>` — Write JS output (`window.TRL_CALENDAR = {...}`) to file (default: stdout)
+- `--json <file>` — Also write processed JSON
+- `--include <path>` — Override include output path (default: `_all_courses/shared/calendar-data.md`)
+- `--no-include` — Skip writing the markdown include
+- `--validate-only` — Print day-count report without writing any output
+
+**What it does:**
+1. Parses the source file (YAML/JSON directly; PDF via pdfplumber for WWCC format)
+2. Counts instruction days per term (weekdays in [start, end] minus holidays/closures)
+3. Validates against `totalInstructionDays` if present in source
+4. Writes a JS global assignment to stdout or `--out`
+5. Auto-writes a `trl-calendar-data` markdown include to `_all_courses/shared/calendar-data.md`
+
+**Example:**
+```bash
+# Process YAML source, print report + JS to stdout
+zaphod calendar process calendar-source-2025-26.yaml
+
+# Process PDF, write JS file and JSON for inspection
+zaphod calendar process "2025-26 wwcc calendar.pdf" --out calendar.js --json calendar.json
+
+# Just check day counts
+zaphod calendar process calendar-source-2025-26.yaml --validate-only
+```
+
+**Terminal output:**
+```
+Processing 2025-26 calendar for WWCC
+──────────────────────────────────────────────────
+✓  summer-2025       47 days  (2025-07-01 → 2025-09-05)
+   off  2025-07-04   Independence Day
+   off  2025-09-01   Labor Day
+✓  fall-2025         52 days  (2025-09-22 → 2025-12-10)
+   off  2025-11-11   Veterans Day
+   off  2025-11-24   Thanksgiving Break  (×5)
+✓  winter-2026       52 days  (2026-01-05 → 2026-03-19)
+✓  spring-2026       52 days  (2026-04-01 → 2026-06-12)
+──────────────────────────────────────────────────
+   Total instruction days: 203
+
+   All counts look good.
 ```
 
 ---
