@@ -108,3 +108,19 @@ def emit_js(data: dict) -> str:
 def emit_json(data: dict) -> str:
     """Return pretty-printed JSON string."""
     return json.dumps(data, indent=2) + "\n"
+
+
+def emit_include(data: dict) -> str:
+    """
+    Return a Trillian-compatible markdown include for the trl-calendar-data
+    component. Uses the human-readable pipe-delimited format specified in
+    trillian/decisions/002-calendar-data-component.md.
+
+    Keys match the processed TRL_CALENDAR shape (term.off, not term.holidays).
+    """
+    lines = ["- trl-calendar-data"]
+    for term in data["terms"]:
+        lines.append(f"- term: {term['id']} | {term['name']} | {term['start']} | {term['end']}")
+        for h in term.get("off", []):
+            lines.append(f"- off: {h['date']} | {h['label']}")
+    return "\n".join(lines) + "\n"
