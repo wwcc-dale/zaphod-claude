@@ -166,3 +166,70 @@ exactly. Shared state is passed via a staging directory and a manifest JSON file
   from pipeline behaviour every time the pipeline gains a new feature.
 - Subprocess per step (like `watch_and_publish.py`): unnecessary overhead for
   a fully local pipeline; direct module import is simpler and equally debuggable.
+
+---
+
+## `zaphod schedule` — Course Flow Generator
+
+### Decision: planned, not yet implemented (2026-03-15)
+
+**Problem**
+
+Syllabi need a course schedule table showing week-by-week topics and due dates. Writing it by hand is tedious and goes stale. Zaphod already has all the required data in the content tree (module names, page/assignment names, session numbers, due dates from frontmatter).
+
+**Proposed approach**
+
+A `zaphod schedule` command that walks the content tree and emits a generated include:
+
+```
+shared/course-schedule.md   ← generated, committed, referenced via {{include:course-schedule}}
+```
+
+The syllabus template (or any page) pulls it in with `{{include:course-schedule}}`.
+
+**Two output layouts — same data, different presentation:**
+
+*Flat table* — best for credit courses with clear weekly pacing:
+
+```markdown
+| Week | Session | Topic | Due |
+|------|---------|-------|-----|
+| 1 | 1 | Introduction | — |
+| 1 | 2 | Core Concepts | Essay 1 — Sep 14 |
+```
+
+*Tab layout* — best for self-paced or module-heavy courses. Each module becomes a tab via a Trillian `trl-schedule` component using the standard `<ul>/<li>` pipe-delimited pattern:
+
+```markdown
+- trl-schedule
+- module: Week 1 — Introduction
+- item: Introduction | page
+- item: Essay 1 | assignment | Sep 14
+- module: Week 2 — Core Concepts
+- item: Deep Dive | page
+```
+
+Layout chosen by which include/component the template uses — the command outputs whichever is requested.
+
+**Data sources (all already available):**
+
+| Column | Source |
+|--------|--------|
+| Week / Module | Module folder name (numeric prefix stripped) |
+| Session | `session:` frontmatter (stamped by `zaphod reorder`) |
+| Topic / item name | `name:` frontmatter |
+| Content type | Folder extension (`.page`, `.assignment`, etc.) |
+| Due date | `due_at:` frontmatter (assignments only) |
+
+**Open design questions:**
+
+1. Multi-session modules — does the flat table group items under a sub-header or repeat the week number per row?
+2. Unscheduled items (no `session:`) — omit, list at end, or warn?
+3. Due date formatting — format `due_at` ISO string automatically, or support a `due_label:` frontmatter override for display?
+4. Command flags — `--format flat|tabs`, or infer from `zaphod.yaml`?
+5. `trl-schedule` Trillian component — needs to be specced and built alongside this command.
+6. Auto-run — explicit `zaphod schedule` call only, or also triggered by `zaphod sync`?
+
+**Relationship to syllabus template**
+
+Intended to pair with a `_all_courses/templates/syllabus/` template set using WWCC boilerplate includes + `{{include:course-schedule}}`. The schedule include is the dynamic part; boilerplate includes (policies, contact info, etc.) are static.

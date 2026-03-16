@@ -5,6 +5,16 @@
 
 ---
 
+## Planned / In Design (not yet implemented)
+
+### `zaphod schedule` — Course Flow Generator
+Generates a `shared/course-schedule.md` include from the content tree. Two layouts: flat markdown table (credit courses) and tab layout via a future `trl-schedule` Trillian component (self-paced/module-heavy). Data sources: `session:`, `name:`, `due_at:` frontmatter + module folder names. Full design in `docs/DECISIONS.md`.
+
+### Syllabus template + WWCC boilerplate includes
+`_all_courses/templates/syllabus/` template set with WWCC standard policy text as shared includes. `{{include:course-schedule}}` in the template provides the dynamic schedule section.
+
+---
+
 ## Recent Changes (2026-03-15)
 
 ### `zaphod calendar` command
